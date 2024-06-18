@@ -1,0 +1,29 @@
+type: charm
+parts:
+  charm:
+    build-packages: [build-essential, librbd-dev, librados-dev, libnuma-dev,
+                     libfuse3-dev, libaio-dev, libssl-dev, libjson-c-dev,
+                     uuid-dev, libiscsi-dev, pkgconf, meson, python3-grpcio,
+                     python3-jinja2, python3-pyelftools, libncurses-dev, git]
+    override-build: |
+      git clone https://github.com/spdk/spdk.git
+      git -C spdk submodule update --init
+      ./spdk/configure --with-rbd --disable-tests --disable-unit-tests \
+                       --disable-debug --disable-examples --without-golang \
+                       --without-shared --without-iscsi-initiator
+      make -C spdk
+      find ./spdk/build/bin ! -name 'nvmf_tgt' -type f -exec rm -f {} +
+      rm -rf ./spdk/test ./spdk/dpdk/examples ./spdk/dpdk/doc \
+             ./spdk/dpdk/build-tmp ./spdk/dpdk/app
+      craftctl default
+
+    prime:
+      - spdk
+
+bases:
+  - build-on:
+    - name: ubuntu
+      channel: "22.04"
+    run-on:
+    - name: ubuntu
+      channel: "22.04"

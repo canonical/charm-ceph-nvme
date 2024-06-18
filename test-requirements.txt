@@ -1,0 +1,8 @@
+setuptools<50.0.0  # https://github.com/pypa/setuptools/commit/04e3df22df840c6bb244e9b27bc56750c44b7c85
+requests>=2.18.4
+stestr>=2.2.0
+cliff<3.0.0
+coverage>=4.5.2
+pydantic < 2
+cosl
+mock

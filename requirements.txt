@@ -1,0 +1,4 @@
+ops ~= 2.5
+netifaces
+netaddr
+git+https://opendev.org/openstack/charm-ops-interface-ceph-client#egg=interface_ceph_client

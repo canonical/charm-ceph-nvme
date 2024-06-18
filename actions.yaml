@@ -1,0 +1,56 @@
+create-endpoint:
+  description: "Create a new endpoint to back NVME devices"
+  params:
+    rbd-image:
+      type: string
+      description: "The RBD image that will back the endpoint"
+    rbd-pool:
+      type: string
+      description: "The RBD pool where the image is allocated"
+    units:
+      type: string
+      description: |
+        A string denoting which other units will implement this endpoint
+        to provide HA guarantees. It can come in 2 forms - Either an
+        integer that specifies the number of additional units that will
+        be used, or a comma-separated list of units ('ceph-nvme/0', for
+        example).
+
+  required:
+    - rbd-image
+    - rbd-pool
+
+delete-endpoint:
+  description: "Remove a previously created endpoint"
+  params:
+    nqn:
+      type: string
+      description: "The NQN of the endpoint"
+
+  required:
+    - nqn
+
+join-endpoint:
+  description: "Join an endpoint from a peer to provide HA"
+  params:
+    nqn:
+      type: string
+      description: "The NQN of the endpoint"
+
+    nmax:
+      type: integer
+      default: -1
+      description: "Maximum number of endpoints to join"
+
+  required:
+    - nqn
+
+leave-endpoint:
+  description: "Leave a previously joined endpoint"
+  params:
+    nqn:
+      type: string
+      description: "The NQN of the endpoint"
+
+list-endpoints:
+  description: "List the endpoints this unit supports"

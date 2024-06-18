@@ -1,0 +1,10 @@
+charm_name: ceph-nvme
+configure:
+  - tests.target.setup_osds_and_pools
+tests:
+  - tests.target.CephNVMETest
+
+target_deploy_status:
+  ubuntu:
+    workload-status: active
+    workload-status-message-prefix: ''
