@@ -25,12 +25,6 @@ import ops.testing
 import src.charm as charm
 
 
-def _subprocess_check_output(args):
-    if args[0] == 'relation-get':
-        return '1.1.1.1'
-    raise RuntimeError('invalid call')
-
-
 class MockSocket:
     def __init__(self):
         self.sendto = MagicMock()
@@ -73,10 +67,8 @@ class TestCharm(unittest.TestCase):
 
     @mock.patch.object(charm.subprocess, 'check_call')
     @mock.patch.object(charm.utils, 'create_systemd_svc')
-    def test_01_start(self, check_call, create_systemd_svc):
-        # Simulate the charm starting
+    def test_start(self, check_call, create_systemd_svc):
         self.harness.begin_with_initial_hooks()
-        # Ensure we set an ActiveStatus with no message
         self.assertEqual(self.harness.model.unit.status,
                          ops.ActiveStatus('ready'))
 
@@ -160,7 +152,7 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_delete_fail(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'nqn': 'nqn.2'}
+        event.params = {'nqn': 'nonexistent'}
 
         charm.on_delete_endpoint_action(event)
         event.fail.assert_called()
@@ -187,7 +179,7 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_join_failed(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'nqn': 'nqn.2'}
+        event.params = {'nqn': 'nonexistent'}
 
         charm.on_join_endpoint_action(event)
         event.fail.assert_called()
@@ -209,7 +201,7 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_leave_fail(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'nqn': 'nqn.2'}
+        event.params = {'nqn': 'nonexistent'}
 
         charm.on_leave_endpoint_action(event)
         event.fail.assert_called()
