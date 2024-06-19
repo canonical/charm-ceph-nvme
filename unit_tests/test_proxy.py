@@ -14,7 +14,7 @@ LOCAL_PORT = 65000
 PROXY_ADDR = ('127.0.0.1', LOCAL_PORT)
 
 
-class TestServer(unittest.TestCase):
+class TestProxy(unittest.TestCase):
     def setUp(self):
         self.rpc = proxy.utils.RPC()
         if os.path.exists(LOCAL_SOCK):

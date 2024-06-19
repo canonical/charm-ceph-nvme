@@ -1,4 +1,18 @@
-#!/usr/bin/env python3
+#! /usr/bin/env python3
+#
+# Copyright 2024 Canonical Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#  http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Charm the application."""
 
@@ -50,11 +64,11 @@ class CephNVMECharm(ops.CharmBase):
         obs = self.framework.observe
         obs(self.on.start, self._on_start)
         obs(self.on.install, self._on_install)
-        obs(self.on.create_endpoint_action, self._on_create_endpoint_action)
-        obs(self.on.delete_endpoint_action, self._on_delete_endpoint_action)
-        obs(self.on.join_endpoint_action, self._on_join_endpoint_action)
-        obs(self.on.leave_endpoint_action, self._on_leave_endpoint_action)
-        obs(self.on.list_endpoints_action, self._on_list_endpoints_action)
+        obs(self.on.create_endpoint_action, self.on_create_endpoint_action)
+        obs(self.on.delete_endpoint_action, self.on_delete_endpoint_action)
+        obs(self.on.join_endpoint_action, self.on_join_endpoint_action)
+        obs(self.on.leave_endpoint_action, self.on_leave_endpoint_action)
+        obs(self.on.list_endpoints_action, self.on_list_endpoints_action)
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
 
@@ -184,8 +198,7 @@ class CephNVMECharm(ops.CharmBase):
                            'port': response['port'],
                            'units': units})
 
-    def _handle_ha_create(self, response, peers, msg, event):
-        sock = self._rpc_sock()
+    def _handle_ha_create(self, response, peers, msg, sock, event):
         valid = [{'addr': self.egress_addr(), 'port': response['port'],
                   'rpc_addr': '127.0.0.1'}]
 
@@ -211,7 +224,7 @@ class CephNVMECharm(ops.CharmBase):
             logger.warning('failed to create additional endpoints for HA')
         self._event_set_create_results(event, response, added)
 
-    def _on_create_endpoint_action(self, event):
+    def on_create_endpoint_action(self, event):
         """Handle endpoint creation."""
         relations = self.model.relations.get(self.client.relation_name)
         if not relations:
@@ -224,7 +237,8 @@ class CephNVMECharm(ops.CharmBase):
         units = event.params.get('units') or "1"
 
         msg = self.rpc.create(pool_name=pool, rbd_name=image, cluster=cluster)
-        res = self._msgloop(msg)
+        sock = self._rpc_sock()
+        res = self._msgloop(msg, sock=sock)
         if 'error' in res:
             event.fail('failed to create endpoint: %s' % str(res['error']))
             return
@@ -241,7 +255,7 @@ class CephNVMECharm(ops.CharmBase):
         # The initial unit allocates the NQN on the fly, while the rest
         # of the peers need to have it set.
         msg['params']['nqn'] = res['nqn']
-        self._handle_ha_create(res, peers, msg, event)
+        self._handle_ha_create(res, peers, msg, sock, event)
 
     def _leave_endpoint(self, sock, nqn):
         elem = self._msgloop(self.rpc.find(nqn=nqn), sock=sock)
@@ -250,7 +264,7 @@ class CephNVMECharm(ops.CharmBase):
 
         peers = self._get_peers()
         msg = self.rpc.leave(addr=elem['addr'], port=elem['port'], nqn=nqn)
-        for peer in peers:
+        for peer in peers.units:
             addr = self._get_unit_addr(peer.name, peers.id)
             if addr is not None:
                 # We don't care about the response here.
@@ -258,16 +272,19 @@ class CephNVMECharm(ops.CharmBase):
 
         return True
 
-    def _on_delete_endpoint_action(self, event):
+    def on_delete_endpoint_action(self, event):
         """Handle endpoint deletion."""
         nqn = event.params.get('nqn')
         sock = self._rpc_sock()
+        if not self._leave_endpoint(sock, nqn):
+            event.fail('NQN is not present on this unit')
+            return
+
         res = self._msgloop(self.rpc.remove(nqn=nqn), sock=sock)
         if 'error' in res:
             event.fail('failed to remove endpoint: %s' % str(res['error']))
             return
 
-        self._leave_endpoint(sock, nqn)
         event.set_results({'message': 'success'})
 
     def _handle_join_peers(self, msg, nqn, peers, num_max, event):
@@ -320,7 +337,7 @@ class CephNVMECharm(ops.CharmBase):
 
         return joined, bdev_spec
 
-    def _on_join_endpoint_action(self, event):
+    def on_join_endpoint_action(self, event):
         """Join an endpoint."""
         peers = self._get_peers()
         if not peers:
@@ -342,7 +359,7 @@ class CephNVMECharm(ops.CharmBase):
             logger.warning('endpoint created but could not join any units')
         self._event_set_create_results(event, bdev, joined)
 
-    def _on_leave_endpoint_action(self, event):
+    def on_leave_endpoint_action(self, event):
         """Leave an endpoint."""
         nqn = event.params.get('nqn')
         sock = self._rpc_sock()
@@ -351,7 +368,7 @@ class CephNVMECharm(ops.CharmBase):
         else:
             event.fail('NQN not found in this unit')
 
-    def _on_list_endpoints_action(self, event):
+    def on_list_endpoints_action(self, event):
         elems = self._msgloop({'method': 'list'})
         event.set_results({'endpoints': elems})
 
