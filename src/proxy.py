@@ -299,9 +299,9 @@ class Proxy:
 
     def _expand_leave(self, msg):
         payload = self.rpc.nvmf_discovery_remove_referral(
+            subnqn=msg['nqn'],
             address=dict(
-                traddr=msg['addr'], trsvcid=str(msg['port']),
-                subnqn=msg['nqn'], trtype='tcp'))
+                traddr=msg['addr'], trsvcid=str(msg['port']), trtype='tcp'))
         return [_json_dumps(payload) + '\n']
 
 

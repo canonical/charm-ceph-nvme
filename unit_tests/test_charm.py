@@ -135,6 +135,24 @@ class TestCharm(unittest.TestCase):
         self._check_calls(rpc_sock.sendto.call_args_list, expected)
 
     @mock.patch.object(charm.subprocess, 'check_output')
+    def test_create_no_ha(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        event.params = {
+            'rbd-pool': 'mypool',
+            'rbd-image': 'myimage',
+            'units': '1'
+        }
+
+        charm.on_create_endpoint_action(event)
+        event.set_results.assert_called_with(
+            {'nqn': 'nqn.1', 'address': '3.3.3.3',
+             'port': 1, 'units': 1})
+
+        # We expect no remote calls for this test.
+        expected = [('create', True)]
+        self._check_calls(rpc_sock.sendto.call_args_list, expected)
+
+    @mock.patch.object(charm.subprocess, 'check_output')
     def test_delete(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
         event.params = {'nqn': 'nqn.1'}

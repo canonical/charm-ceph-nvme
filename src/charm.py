@@ -245,7 +245,7 @@ class CephNVMECharm(ops.CharmBase):
 
         peers = self._select_ha_units(units)
         if not peers:
-            if units != "1" or units != self.model.unit.name:
+            if units != "1" and units != self.model.unit.name:
                 logger.warning('could not get enough units for HA - '
                                'try running the "join-endpoint" action on '
                                'additional units')
