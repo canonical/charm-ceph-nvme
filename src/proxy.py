@@ -56,7 +56,6 @@ class Proxy:
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
         self.xaddr = xaddr
-        self.subsystems = {}
         self.handlers = {
             'create': RPCHandler(self._expand_create, self._post_create),
             'remove': RPCHandler(self._expand_remove, None),
@@ -70,8 +69,6 @@ class Proxy:
         for line in self._prepare_file():
             self._process_line(line)
 
-        self.fetch_spdk_state()
-
     def fetch_spdk_state(self):
         """Return a dictionary describing the subsystems for the gateway."""
         msg = self.rpc.nvmf_get_subsystems()
@@ -81,12 +78,15 @@ class Proxy:
             return
 
         obj = obj.get('result', ())
+        ret = {}
         for elem in obj:
             nqn = elem.pop('nqn')
             if nqn is None or 'discovery' in nqn:
                 continue
 
-            self.subsystems[nqn] = elem
+            ret[nqn] = elem
+
+        return ret
 
     def _prepare_file(self):
         """Read the contents of the bootstrap file or set it up it if empty."""
@@ -205,6 +205,20 @@ class Proxy:
         return ret
 
     @staticmethod
+    def _ns_dict(bdev_name, nqn):
+        # In order for namespaces to be equal, the following must match:
+        # namespace ID (always set to 1)
+        # NGUID (32 bytes)
+        # EUI64 (16 bytes)
+        # UUID
+        # The latter 3 are derived from the NQN, which is either allocated
+        # on the fly, or passed in as a parameter.
+        uuid = nqn[len(NQN_BASE):]
+        base = uuid.replace('-', '')
+        return dict(bdev_name=bdev_name, nsid=1, nguid=base,
+                    eui64=base[:16], uuid=uuid)
+
+    @staticmethod
     def _subsystem_to_dict(subsys):
         elem = subsys['listen_addresses'][0]
         return {'addr': elem['traddr'], 'port': elem['trsvcid'],
@@ -246,14 +260,14 @@ class Proxy:
 
         payload = self.rpc.nvmf_subsystem_add_ns(
             nqn=nqn,
-            namespace=dict(bdev_name=bdev_name, nsid=1))
+            namespace=self._ns_dict(bdev_name, nqn))
         _dump_and_append(ret, payload)
         return ret
 
     def _post_create(self, msg):
-        self.fetch_spdk_state()
+        subsystems = self.fetch_spdk_state()
         nqn = msg['nqn']
-        sub = self.subsystems[nqn]
+        sub = subsystems[nqn]
         lst = sub['listen_addresses'][0]
         return {'addr': lst['traddr'], 'nqn': nqn, 'port': lst['trsvcid']}
 
@@ -276,7 +290,8 @@ class Proxy:
 
     def _expand_join(self, msg):
         nqn = msg['nqn']
-        if nqn not in self.subsystems:
+        subsystems = self.fetch_spdk_state()
+        if nqn not in subsystems:
             return []
 
         ret = []
@@ -290,12 +305,13 @@ class Proxy:
         return ret
 
     def _post_find(self, msg):
-        subsys = self.subsystems.get(msg['nqn'])
+        subsys = self.fetch_spdk_state()[msg['nqn']]
         return self._subsystem_to_dict(subsys) if subsys else {}
 
     def _post_list(self, msg):
+        subsystems = self.fetch_spdk_state()
         return [{'nqn': nqn, **self._subsystem_to_dict(subsys)}
-                for nqn, subsys in self.subsystems.items()]
+                for nqn, subsys in subsystems.items()]
 
     def _expand_leave(self, msg):
         payload = self.rpc.nvmf_discovery_remove_referral(
