@@ -54,22 +54,64 @@ class CephNVMETest(test_utils.BaseCharmTest):
             action_params={'nqn': data['nqn']})
         zaza_utils.assertActionRanOK(action_obj)
 
-        return   # XXX: Write the rest of the test
-
         # Finally, re-join the endpoint we just deleted.
         action_obj = zaza_model.run_action(
             unit_name='ceph-nvme/1',
             action_name='join-endpoint',
             action_params={'nqn': data['nqn']})
         zaza_utils.assertActionRanOK(action_obj)
+        d2 = action_obj.data['results']
+        self.assertEqual(d2['nqn'], data['nqn'])
 
         # Mount the device on the Ubuntu unit.
-        zaza_model.run_on_unit('ubuntu/0', 'sudo snap install nvme-cli')
-        out = zaza_model.run_on_unit('ubuntu/0',
-                                     'sudo nvme-cli discover -t tcp '
-                                     '-a %s -s %s' % (data['address'],
-                                                      data['port']))
+        zaza_model.run_on_unit('ubuntu/0', 'sudo apt install nvme-cli')
+        cmd = 'sudo nvme discover -t tcp -a %s -s %s -o json'
+        out = zaza_model.run_on_unit('ubuntu/0', cmd %
+                                     (data['address'], data['port']))
         out = json.loads(out.get('Stdout'))
         records = out['records']
         self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]['nqn'], records[1]['nqn'])
         self.assertEqual(records[0]['nqn'], data['nqn'])
+
+        cmd = 'sudo nvme connect-all -t tcp -a %s -s %s -o json'
+        out = zaza_model.run_on_unit('ubuntu/0', cmd %
+                                     (data['address'], data['port']))
+        out = json.loads(out.get('Stdout'))
+        for elem in out['Subsystems']:
+            if elem['nqn'] == data['nqn']:
+                addr1 = 'traddr=%s trsvcid=%s' % (data['address'], data['port'])
+                addr2 = 'traddr=%s trsvcid=%s' % (d2['address'], d2['port'])
+
+                paths = elem['Paths']
+                self.assertEqual(len(paths), 2)
+                self.assertEqual(paths[0]['Transport'], 'tcp')
+                self.assertEqual(paths[1]['Transport'], 'tcp')
+                self.assertEqual(paths[0]['State'], 'live')
+                self.assertEqual(paths[1]['State'], 'live')
+                self.assertTrue(paths[0]['Address'] == addr1 or
+                                paths[0]['Address'] == addr2)
+                self.assertTrue(paths[1]['Address'] == addr2 or
+                                paths[1]['Address'] == addr2)
+                break
+        else:
+            raise RuntimeError('NQN %s not found' % data['nqn'])
+
+        cmd = 'sudo nvme list -o json'
+        out = zaza_model.run_on_unit('ubuntu/0', cmd)
+        out = json.loads(out.get('Stdout'))
+        for elem in out['Devices']:
+            if 'SPDK' in elem['ModelNumber']:
+                device = elem['DevicePath']
+                break
+        else:
+            raise RuntimeError('Device not found')
+
+        msg = 'Hello there!'
+        zaza_model.run_on_unit('ubuntu/0',
+                               'echo "%s" | sudo tee %s' % (msg, device))
+
+        cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' %
+            (device, len(msg))
+        out = zaza_model.run_on_unit('ubuntu/0', cmd)
+        self.assertEqual(out.get('Stdout'), msg)
