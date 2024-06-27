@@ -1,9 +1,9 @@
 variables:
-  openstack-origin: &openstack-origin cloud:jammy-antelope
+  openstack-origin: &openstack-origin cloud:focal-yoga
 
 local_overlay_enabled: False
 
-series: &series jammy
+series: &series focal
 
 machines:
   '1':
@@ -18,6 +18,8 @@ applications:
     charm: ch:microceph
     num_units: 3
     channel: latest/edge
+    options:
+      snap-channel: quincy/stable
 
   ubuntu:
     charm: ch:ubuntu
