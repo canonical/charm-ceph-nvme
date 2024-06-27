@@ -69,7 +69,7 @@ class Proxy:
         for line in self._prepare_file():
             self._process_line(line)
 
-    def fetch_spdk_state(self):
+    def get_spdk_subsystems(self):
         """Return a dictionary describing the subsystems for the gateway."""
         msg = self.rpc.nvmf_get_subsystems()
         obj = self._receive_response(json.dumps(msg).encode('utf8'))
@@ -265,19 +265,24 @@ class Proxy:
         return ret
 
     def _post_create(self, msg):
-        subsystems = self.fetch_spdk_state()
+        subsystems = self.get_spdk_subsystems()
         nqn = msg['nqn']
         sub = subsystems[nqn]
         lst = sub['listen_addresses'][0]
         return {'addr': lst['traddr'], 'nqn': nqn, 'port': lst['trsvcid']}
 
     def _expand_remove(self, msg):
+        nqn = msg['nqn']
+        name = self.get_spdk_subsystems()[nqn]['namespaces'][0]['name']
         ret = []
         payload = self.rpc.nvmf_subsystem_remove_ns(
             nqn=msg['nqn'], nsid=1)
         _dump_and_append(ret, payload)
 
         payload = self.rpc.nvmf_delete_subsystem(nqn=msg['nqn'])
+        _dump_and_append(ret, payload)
+
+        payload = self.rpc.bdev_rbd_delete(name=name)
         _dump_and_append(ret, payload)
 
         return ret
@@ -290,7 +295,7 @@ class Proxy:
 
     def _expand_join(self, msg):
         nqn = msg['nqn']
-        subsystems = self.fetch_spdk_state()
+        subsystems = self.get_spdk_subsystems()
         if nqn not in subsystems:
             return []
 
@@ -305,11 +310,11 @@ class Proxy:
         return ret
 
     def _post_find(self, msg):
-        subsys = self.fetch_spdk_state()[msg['nqn']]
+        subsys = self.get_spdk_subsystems()[msg['nqn']]
         return self._subsystem_to_dict(subsys) if subsys else {}
 
     def _post_list(self, msg):
-        subsystems = self.fetch_spdk_state()
+        subsystems = self.get_spdk_subsystems()
         return [{'nqn': nqn, **self._subsystem_to_dict(subsys)}
                 for nqn, subsys in subsystems.items()]
 

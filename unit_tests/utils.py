@@ -15,6 +15,7 @@ class MockSPDK:
             'nvmf_get_subsystems': self._mock_get_subsystems,
             'bdev_rbd_register_cluster': self._mock_register_cluster,
             'bdev_rbd_create': self._mock_rbd_create,
+            'bdev_rbd_delete': self._mock_rbd_delete,
             'nvmf_create_subsystem': self._mock_create_subsystem,
             'nvmf_subsystem_add_listener': self._mock_add_listener,
             'nvmf_subsystem_add_ns': self._mock_add_ns,
@@ -47,6 +48,9 @@ class MockSPDK:
                               {'pool': params['pool_name'],
                                'image': params['rbd_name'],
                                'cluster': params['cluster_name']})
+
+    def _mock_rbd_delete(self, params):
+        del self.bdevs[params['name']]
 
     def _mock_create_subsystem(self, params):
         dfl = {'listen_addresses': [], 'namespaces': [None]}
