@@ -97,6 +97,8 @@ jobs:
             juju bootstrap localhost localhost
           fi
 
+          sudo snap install --classic juju-crashdump
+
       - name: Run jammy-antelope tests
         run: |
           date
@@ -104,9 +106,18 @@ jobs:
           tox -c src -e func-target -- jammy-antelope
 
       - name: Upload artifacts on failure
+        uses: actions/upload-artifact@v3
+        with:
+          name: crashdumps
+          path: "./crashdumps/*"
         if: failure()
         run: |
-          echo "upload juju crash dumps and logs here"
+          models=$(juju models | grep zaza | awk '{print $1}' | tr -d '*')
+          rm -rf ./crashdumps
+          mkdir ./crashdumps
+          for model in $models; do
+            juju crashdump -m $model -o ./crashdumps
+          done
 
       - name: Tear down models
         if: always()
