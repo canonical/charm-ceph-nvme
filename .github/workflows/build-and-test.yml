@@ -92,7 +92,7 @@ jobs:
         run: |
           python3 -m pip install tox
           if [ ! -d "$HOME/.local/share/juju" ]; then
-            sudo snap install juju
+            sudo snap install juju --channel=3.4/stable
             mkdir -p ~/.local/share/juju
             juju bootstrap localhost localhost
           fi
