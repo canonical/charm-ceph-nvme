@@ -102,7 +102,7 @@ jobs:
       - name: Run focal-yoga tests
         run: |
           date
-          mv ~/artifacts/ceph-fs.charm ./
+          mv ~/artifacts/ceph-nvme.charm ./
           tox -e func-target -- focal-yoga
 
       - name: Generate crash dumps
