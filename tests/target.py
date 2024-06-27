@@ -80,7 +80,8 @@ class CephNVMETest(test_utils.BaseCharmTest):
         out = json.loads(out.get('Stdout'))
         for elem in out['Subsystems']:
             if elem['nqn'] == data['nqn']:
-                addr1 = 'traddr=%s trsvcid=%s' % (data['address'], data['port'])
+                addr1 = 'traddr=%s trsvcid=%s' % (data['address'],
+                                                  data['port'])
                 addr2 = 'traddr=%s trsvcid=%s' % (d2['address'], d2['port'])
 
                 paths = elem['Paths']
@@ -111,7 +112,7 @@ class CephNVMETest(test_utils.BaseCharmTest):
         zaza_model.run_on_unit('ubuntu/0',
                                'echo "%s" | sudo tee %s' % (msg, device))
 
-        cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' %
-            (device, len(msg))
+        cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' % (
+            device, len(msg))
         out = zaza_model.run_on_unit('ubuntu/0', cmd)
         self.assertEqual(out.get('Stdout'), msg)
