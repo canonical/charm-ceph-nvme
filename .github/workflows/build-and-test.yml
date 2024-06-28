@@ -99,11 +99,11 @@ jobs:
 
           sudo snap install --classic juju-crashdump
 
-      - name: Run focal-yoga tests
+      - name: Run jammy-yoga tests
         run: |
           date
           mv ~/artifacts/ceph-nvme.charm ./
-          tox -e func-target -- focal-yoga
+          tox -e func-target -- jammy-yoga
 
       - name: Generate crash dumps
         if: failure()
