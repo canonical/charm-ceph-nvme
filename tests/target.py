@@ -44,7 +44,7 @@ def setup_osds_and_pools():
             'workload-status-message-prefix': ''
         }
     }
-    zaza_model.wait_for_application_states(states)
+    zaza_model.wait_for_application_states(states=states)
 
 
 class CephNVMETest(test_utils.BaseCharmTest):
