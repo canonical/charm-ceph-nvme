@@ -1,9 +1,9 @@
 variables:
-  openstack-origin: &openstack-origin cloud:focal-yoga
+  openstack-origin: &openstack-origin cloud:jammy-yoga
 
 local_overlay_enabled: False
 
-series: &series focal
+series: &series jammy
 
 machines:
   '1':
