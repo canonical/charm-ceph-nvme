@@ -8,3 +8,7 @@ target_deploy_status:
   ubuntu:
     workload-status: active
     workload-status-message-prefix: ''
+
+  microceph:
+    workload-status: active
+    workload-status-message-prefix: ''

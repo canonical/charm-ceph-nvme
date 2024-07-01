@@ -6,3 +6,5 @@ coverage>=4.5.2
 pydantic < 2
 cosl
 mock
+git+https://github.com/openstack-charmers/zaza.git#egg=zaza
+git+https://github.com/openstack-charmers/zaza-openstack-tests.git#egg=zaza.openstack
