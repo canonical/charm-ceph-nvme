@@ -92,7 +92,7 @@ jobs:
         run: |
           python3 -m pip install tox
           if [ ! -d "$HOME/.local/share/juju" ]; then
-            sudo snap install juju
+            sudo snap install juju --channel=3.4/stable
             mkdir -p ~/.local/share/juju
             juju bootstrap localhost localhost
           fi
@@ -102,8 +102,8 @@ jobs:
       - name: Run jammy-antelope tests
         run: |
           date
-          mv ~/artifacts/ceph-fs.charm ./
-          tox -c src -e func-target -- jammy-antelope
+          mv ~/artifacts/ceph-nvme.charm ./
+          tox -e func-target -- jammy-antelope
 
       - name: Generate crash dumps
         if: failure()
@@ -121,7 +121,7 @@ jobs:
           name: crashdumps
           path: "./crashdumps/*"
         if: failure()
-          
+
       - name: Tear down models
         if: always()
         run: |

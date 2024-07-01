@@ -18,6 +18,8 @@ applications:
     charm: ch:microceph
     num_units: 3
     channel: latest/edge
+    options:
+      snap-channel: reef/stable
 
   ubuntu:
     charm: ch:ubuntu

@@ -15,6 +15,7 @@
 """Encapsulate Ceph-NVMe-oF testing."""
 
 import json
+import unittest
 
 import zaza.model as zaza_model
 import zaza.openstack.utilities.generic as zaza_utils
@@ -26,16 +27,40 @@ def setup_osds_and_pools():
         action_obj = zaza_model.run_action(
             unit_name=unit.entity_id,
             action_name='add-osd',
-            action_params={'loop-spec': '4G,1'})
+            action_params={'loop-spec': '1G,1'})
         zaza_utils.assertActionRanOK(action_obj)
 
     cmds = ['sudo microceph.ceph osd pool create mypool',
-            'sudo microceph.rbd create --size 4096 mypool/myimage']
+            'sudo microceph.rbd create --size 1024 mypool/myimage']
     for cmd in cmds:
         zaza_model.run_on_unit('microceph/0', cmd)
 
+    states = {
+        'ubuntu': {
+            'workload-status': 'active',
+            'workload-status-message-prefix': ''
+        },
+        'microceph': {
+            'workload-status': 'active',
+            'workload-status-message-prefix': ''
+        }
+    }
+    zaza_model.wait_for_application_states(states=states)
+
 
 class CephNVMETest(test_utils.BaseCharmTest):
+
+    def _install_nvme(self, unit):
+        zaza_model.run_on_unit(unit, 'sudo apt update')
+
+        cmd = 'sudo apt install %s-$(uname -r)'
+        zaza_model.run_on_unit(unit, cmd % 'linux-modules')
+        zaza_model.run_on_unit(unit, cmd % 'linux-modules-extra')
+        zaza_model.run_on_unit(unit, 'sudo modprobe nvme-core')
+        zaza_model.run_on_unit(unit, 'sudo modprobe nvme-tcp')
+        zaza_model.run_on_unit(unit, 'sudo apt install nvme-cli')
+        out = zaza_model.run_on_unit(unit, 'ls /dev/nvme-fabrics')
+        return out.get('Code', 1)
 
     def test_mount_device(self):
         # Create an endpoint with both units.
@@ -64,7 +89,10 @@ class CephNVMETest(test_utils.BaseCharmTest):
         self.assertEqual(d2['nqn'], data['nqn'])
 
         # Mount the device on the Ubuntu unit.
-        zaza_model.run_on_unit('ubuntu/0', 'sudo apt install nvme-cli')
+        if self._install_nvme('ubuntu/0') != 0:
+            # Unit doesn't have the nvme-fabrics driver - Abort.
+            raise unittest.SkipTest('Skipping test due to lack of NVME driver')
+
         cmd = 'sudo nvme discover -t tcp -a %s -s %s -o json'
         out = zaza_model.run_on_unit('ubuntu/0', cmd %
                                      (data['address'], data['port']))
@@ -80,7 +108,8 @@ class CephNVMETest(test_utils.BaseCharmTest):
         out = json.loads(out.get('Stdout'))
         for elem in out['Subsystems']:
             if elem['nqn'] == data['nqn']:
-                addr1 = 'traddr=%s trsvcid=%s' % (data['address'], data['port'])
+                addr1 = 'traddr=%s trsvcid=%s' % (data['address'],
+                                                  data['port'])
                 addr2 = 'traddr=%s trsvcid=%s' % (d2['address'], d2['port'])
 
                 paths = elem['Paths']
@@ -111,7 +140,7 @@ class CephNVMETest(test_utils.BaseCharmTest):
         zaza_model.run_on_unit('ubuntu/0',
                                'echo "%s" | sudo tee %s' % (msg, device))
 
-        cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' %
-            (device, len(msg))
+        cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' % (
+            device, len(msg))
         out = zaza_model.run_on_unit('ubuntu/0', cmd)
         self.assertEqual(out.get('Stdout'), msg)
