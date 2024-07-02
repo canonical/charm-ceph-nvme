@@ -16,7 +16,7 @@ parts:
       find ./spdk/build/bin ! -name 'nvmf_tgt' -type f -exec rm -f {} +
       find ./spdk -name '*.o' -type f -delete
       find ./spdk -name '*.d' -type f -delete
-      find ./spdk -name 'docs' -type d -exec rm -rf {} \;
+      find ./spdk -name 'docs' -type d -exec rm -rf {} \; || true
       rm -rf ./spdk/test ./spdk/dpdk
       craftctl default
 
