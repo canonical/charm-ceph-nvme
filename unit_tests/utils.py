@@ -39,6 +39,9 @@ class MockSPDK:
             'nvmf_delete_subsystem': self._mock_delete_subsystem,
             'nvmf_discovery_add_referral': self._mock_add_referral,
             'nvmf_discovery_remove_referral': self._mock_remove_referral,
+            'nvmf_subsystem_add_host': self._mock_add_host,
+            'nvmf_subsystem_remove_host': self._mock_remove_host,
+            'nvmf_subsystem_allow_any_host': self._mock_allow_any_host,
         }
 
     def close(self):
@@ -69,7 +72,8 @@ class MockSPDK:
         del self.bdevs[params['name']]
 
     def _mock_create_subsystem(self, params):
-        dfl = {'listen_addresses': [], 'namespaces': [None]}
+        dfl = {'listen_addresses': [], 'namespaces': [None],
+                'hosts': [(False, None)]}
         self.subsystems.setdefault(params['nqn'], dfl)
 
     def _mock_add_listener(self, params):
@@ -125,6 +129,49 @@ class MockSPDK:
         ret = list({'nqn': nqn, **value}
                    for nqn, value in self.subsystems.items())
         return json.dumps({'result': ret}).encode('utf8')
+
+    @staticmethod
+    def _find_host(lst, host):
+        for i, elem in enumerate(lst):
+            if elem[0] == host:
+                return i
+
+    def _mock_add_host(self, params):
+        host = params['host']
+        subsys = self._find_subsys(params['nqn'])
+
+        if isinstance(subsys, bytes):
+            return subsys
+        elif self._find_host(subsys['hosts'], host) is not None:
+            return b'{"error": "host already present"}'
+
+        key = params.get('psk')
+        if key is not None:
+            with open(key, 'r') as file:
+                key = file.read()
+
+        subsys['hosts'].append((host, key))
+
+    def _mock_remove_host(self, params):
+        host = params['host']
+        subsys = self._find_subsys(params['nqn'])
+
+        if isinstance(subsys, bytes):
+            return subsys
+
+        hosts = subsys['hosts']
+        idx = self._find_host(hosts, host)
+        if idx is None:
+            return b'{"error": "host not present in nqn"}'
+
+        subsys['hosts'] = hosts[:idx] + hosts[idx + 1:]
+
+    def _mock_allow_any_host(self, params):
+        subsys = self._find_subsys(params['nqn'])
+        if isinstance(subsys, bytes):
+            return subsys
+
+        subsys['hosts'][0] = (params['allow_any_host'], None)
 
     def loop(self, timeout=None):
         rd, _, _ = select.select([self.sock], [], [], timeout)

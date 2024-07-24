@@ -96,6 +96,27 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
+        msg = self.rpc.host_add(host='host', nqn=prev['nqn'], key='some-key')
+        rv = self.msgloop(msg)
+        self.assertNotIn('error', rv)
+
+        subsys = self.spdk.subsystems[prev['nqn']]
+        for host, key in subsys['hosts']:
+            if key == 'some-key':
+                self.assertEqual(host, 'host')
+                break
+        else:
+            raise KeyError('host not found')
+
+        msg = self.rpc.host_add(host='*', nqn=prev['nqn'])
+        rv = self.msgloop(msg)
+        self.assertNotIn('error', rv)
+        self.assertTrue(self.spdk.subsystems[prev['nqn']]['hosts'][0])
+
+        msg = self.rpc.host_del(host='host', nqn=prev['nqn'])
+        rv = self.msgloop(msg)
+        self.assertNotIn('error', rv)
+
         msg = self.rpc.leave(nqn='nqn.1', addr='127.0.01', port=65001)
         self.msgloop(msg)
         self.assertFalse(self.spdk.referrals)

@@ -68,6 +68,8 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.on.delete_endpoint_action, self.on_delete_endpoint_action)
         obs(self.on.join_endpoint_action, self.on_join_endpoint_action)
         obs(self.on.list_endpoints_action, self.on_list_endpoints_action)
+        obs(self.on.add_host_action, self.on_add_host_action)
+        obs(self.on.delete_host_action, self.on_delete_host_action)
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
 
@@ -156,6 +158,16 @@ class CephNVMECharm(ops.CharmBase):
         if peers:
             peers = next(iter(peers))
         return peers
+
+    def _peer_addrs(self):
+        peers = self._get_peers()
+        ret = []
+        for peer in peers.units:
+            addr = self._get_unit_addr(peer.name, peers.id)
+            if addr is not None:
+                ret.append(addr)
+
+        return ret
 
     def _select_ha_units(self, unit_spec):
         """Given a spec, pick a proper subset of peers to handle HA."""
@@ -261,13 +273,10 @@ class CephNVMECharm(ops.CharmBase):
         if not elem:
             return False
 
-        peers = self._get_peers()
         msg = self.rpc.leave(addr=elem['addr'], port=elem['port'], nqn=nqn)
-        for peer in peers.units:
-            addr = self._get_unit_addr(peer.name, peers.id)
-            if addr is not None:
-                # We don't care about the response here.
-                self._msgloop(msg, addr=addr, sock=sock)
+        for addr in self._peer_addrs():
+            # We don't care about the response here.
+            self._msgloop(msg, addr=addr, sock=sock)
 
         return True
 
@@ -288,15 +297,10 @@ class CephNVMECharm(ops.CharmBase):
 
     def _handle_join_peers(self, msg, nqn, peers, num_max, event):
         sock = self._rpc_sock()
-        peer_id = peers.id
         bdev_spec = None
         joined = 0
 
-        for peer in peers.units:
-            addr = self._get_unit_addr(peer.name, peer_id)
-            if addr is None:
-                continue
-
+        for addr in peers:
             resp = self._msgloop(msg, addr=addr, sock=sock)
             if not resp:
                 # Empty response means this peer doesn't handle the NQN.
@@ -338,7 +342,7 @@ class CephNVMECharm(ops.CharmBase):
 
     def on_join_endpoint_action(self, event):
         """Join an endpoint."""
-        peers = self._get_peers()
+        peers = self._peer_addrs()
         if not peers:
             event.fail('no peers to join')
             return
@@ -346,7 +350,7 @@ class CephNVMECharm(ops.CharmBase):
         nqn = event.params.get('nqn')
         num_max = event.params.get('nmax', -1)
         if num_max <= 0:
-            num_max = len(peers.units)
+            num_max = len(peers)
 
         msg = self.rpc.find(nqn=nqn)
         joined, bdev = self._handle_join_peers(msg, nqn, peers, num_max, event)
@@ -361,6 +365,41 @@ class CephNVMECharm(ops.CharmBase):
     def on_list_endpoints_action(self, event):
         elems = self._msgloop({'method': 'list'})
         event.set_results({'endpoints': elems})
+
+    def on_add_host_action(self, event):
+        nqn = event.params.get('nqn')
+        key = event.params.get('key')
+        kwargs = dict(nqn=nqn, host=event.params.get('host'))
+        if key:
+            kwargs['key'] = key
+
+        msg = self.rpc.host_add(**kwargs)
+        sock = self._rpc_sock()
+        res = self._msgloop(msg, sock=sock)
+        if 'error' in res:
+            event.fail('NQN %s not found' % nqn)
+            return
+
+        for addr in self._peer_addrs():
+            self._msgloop(msg, addr=addr, sock=sock)
+
+        event.set_results({'message': 'success'})
+
+    def on_delete_host_action(self, event):
+        nqn = event.params.get('nqn')
+        host = event.params.get('host')
+        msg = self.rpc.host_del(nqn=nqn, host=host)
+        sock = self._rpc_sock()
+        res = self._msgloop(msg, sock=sock)
+
+        if 'error' in res:
+            event.fail('Host %s or NQN %s not found' % (host, nqn))
+            return
+
+        for addr in self._peer_addrs():
+            self._msgloop(msg, addr=addr, sock=sock)
+
+        event.set_results({'message': 'success'})
 
     def _install_packages(self, packages):
         # Code taken from charmhelpers.

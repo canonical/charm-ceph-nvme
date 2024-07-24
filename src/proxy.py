@@ -22,6 +22,7 @@ import os
 import pickle
 import socket
 import sys
+import tempfile
 import uuid
 
 sys.path.append(os.path.dirname(os.path.abspath(__name__)))
@@ -64,6 +65,23 @@ class ProxyAddListener:
         return proxy.msgloop(msg)
 
 
+class ProxyAddHost:
+    def __init__(self, msg, key):
+        self.msg = msg
+        self.key = key
+
+    def __call__(self, proxy):
+        if not self.key:
+            return proxy.msgloop(self.msg)
+
+        with tempfile.NamedTemporaryFile(mode='w+') as file:
+            file.write(self.key)
+            file.flush()
+            msg = self.msg.copy()
+            msg['params']['psk'] = file.name
+            return proxy.msgloop(msg)
+
+
 class Proxy:
     def __init__(self, port, cmd_file, xaddr, rpc_path):
         self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -82,6 +100,8 @@ class Proxy:
             'find': RPCHandler(self._expand_default, self._post_find),
             'leave': RPCHandler(self._expand_leave, None),
             'list': RPCHandler(self._expand_default, self._post_list),
+            'host_add': RPCHandler(self._expand_host_add, None),
+            'host_del': RPCHandler(self._expand_host_del, None),
         }
 
         for cmd in self._prepare_file():
@@ -253,9 +273,7 @@ class Proxy:
         yield ProxyCommand(payload)
 
         payload = self.rpc.nvmf_create_subsystem(
-            nqn=nqn, ana_reporting=True, max_namespaces=2,
-            allow_any_host=True   # XXX: Remove when ready.
-        )
+            nqn=nqn, ana_reporting=True, max_namespaces=2)
         yield ProxyCommand(payload)
 
         payload = self.rpc.nvmf_subsystem_add_listener(
@@ -321,6 +339,22 @@ class Proxy:
             subnqn=msg['nqn'],
             address=dict(
                 traddr=msg['addr'], trsvcid=str(msg['port']), trtype='tcp'))
+        yield ProxyCommand(payload)
+
+    def _expand_host_add(self, msg):
+        host = msg['host']
+        if host == '*':
+            payload = self.rpc.nvmf_subsystem_allow_any_host(
+                nqn=msg['nqn'], allow_any_host=True)
+            yield ProxyCommand(payload)
+        else:
+            payload = self.rpc.nvmf_subsystem_add_host(
+                nqn=msg['nqn'], host=host)
+            yield ProxyAddHost(payload, msg.get('key'))
+
+    def _expand_host_del(self, msg):
+        payload = self.rpc.nvmf_subsystem_remove_host(
+            nqn=msg['nqn'], host=msg['host'])
         yield ProxyCommand(payload)
 
 

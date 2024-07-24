@@ -47,15 +47,18 @@ class MockSocket:
     def _compute_response(self, msg):
         msg = json.loads(msg)
         method = msg['method']
-        if method not in ('create', 'list', 'find'):
+        if method not in ('create', 'list', 'find', 'host_add', 'host_del'):
             return b'{}'
 
         ret = {'nqn': 'nqn.1', 'addr': '3.3.3.3', 'port': 1,
                'pool': 'mypool', 'image': 'myimage', 'cluster': 'ceph.1'}
         if method == 'list':
             ret = [ret]
-        elif method == 'find' and msg['params']['nqn'] != 'nqn.1':
+        elif (method in ('find', 'host_add', 'host_del') and
+              msg['params']['nqn'] != 'nqn.1'):
             ret = {}
+            if method in ('host_add', 'host_del'):
+                ret['error'] = ""
 
         return json.dumps(ret).encode('utf8')
 
@@ -210,3 +213,40 @@ class TestCharm(unittest.TestCase):
         args = event.set_results.call_args_list[0][0][0]['endpoints']
         self.assertEqual(len(args), 1)
         self.assertEqual(args[0]['nqn'], 'nqn.1')
+
+    @mock.patch.object(charm.subprocess, 'check_output')
+    def test_add_host(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        event.params = {'host': 'host_nqn', 'nqn': 'nqn.1'}
+
+        charm.on_add_host_action(event)
+        event.set_results.assert_called()
+
+        expected = [('host_add', True), ('host_add', False)]
+        self._check_calls(rpc_sock.sendto.call_args_list, expected)
+
+    @mock.patch.object(charm.subprocess, 'check_output')
+    def test_add_host_failed(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        event.params = {'host': 'host_nqn', 'nqn': 'nonexistent'}
+
+        charm.on_add_host_action(event)
+        event.fail.assert_called()
+
+    @mock.patch.object(charm.subprocess, 'check_output')
+    def test_delete_host(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        event.params = {'host': 'host_nqn', 'nqn': 'nqn.1'}
+        charm.on_delete_host_action(event)
+
+        event.set_results.assert_called()
+        expected = [('host_del', True), ('host_del', False)]
+        self._check_calls(rpc_sock.sendto.call_args_list, expected)
+
+    @mock.patch.object(charm.subprocess, 'check_output')
+    def test_delete_host_failed(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        event.params = {'host': 'host_nqn', 'nqn': 'nonexistent'}
+        charm.on_delete_host_action(event)
+
+        event.fail.assert_called()
