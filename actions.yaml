@@ -1,5 +1,5 @@
 create-endpoint:
-  description: "Create a new endpoint to back NVME devices"
+  description: "Create a new endpoint to back NVMe devices"
   params:
     rbd-image:
       type: string
@@ -44,13 +44,6 @@ join-endpoint:
 
   required:
     - nqn
-
-leave-endpoint:
-  description: "Leave a previously joined endpoint"
-  params:
-    nqn:
-      type: string
-      description: "The NQN of the endpoint"
 
 list-endpoints:
   description: "List the endpoints this unit supports"

@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 SPDK_TGT_FILE = '/lib/systemd/system/nvmf_tgt.service'
 PROXY_FILE = '/lib/systemd/system/nvmf_proxy.service'
-PROXY_CMDS_FILE = '/var/lib/nvme-of/cmds.json'
+PROXY_CMDS_FILE = '/var/lib/nvme-of/cmds'
 
 SYSTEMD_TEMPLATE = """
 [Unit]
@@ -67,7 +67,6 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.on.create_endpoint_action, self.on_create_endpoint_action)
         obs(self.on.delete_endpoint_action, self.on_delete_endpoint_action)
         obs(self.on.join_endpoint_action, self.on_join_endpoint_action)
-        obs(self.on.leave_endpoint_action, self.on_leave_endpoint_action)
         obs(self.on.list_endpoints_action, self.on_list_endpoints_action)
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
@@ -358,15 +357,6 @@ class CephNVMECharm(ops.CharmBase):
                 return
             logger.warning('endpoint created but could not join any units')
         self._event_set_create_results(event, bdev, joined)
-
-    def on_leave_endpoint_action(self, event):
-        """Leave an endpoint."""
-        nqn = event.params.get('nqn')
-        sock = self._rpc_sock()
-        if self._leave_endpoint(sock, nqn):
-            event.set_results({'message': 'success'})
-        else:
-            event.fail('NQN not found in this unit')
 
     def on_list_endpoints_action(self, event):
         elems = self._msgloop({'method': 'list'})

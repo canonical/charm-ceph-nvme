@@ -203,28 +203,6 @@ class TestCharm(unittest.TestCase):
         event.fail.assert_called()
 
     @mock.patch.object(charm.subprocess, 'check_output')
-    def test_leave(self, check_output):
-        charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'nqn': 'nqn.1'}
-
-        charm.on_leave_endpoint_action(event)
-        event.set_results.assert_called_with({'message': 'success'})
-
-        # We expect the following calls:
-        # local-find
-        # remote-leave
-        expected = [('find', True), ('leave', False)]
-        self._check_calls(rpc_sock.sendto.call_args_list, expected)
-
-    @mock.patch.object(charm.subprocess, 'check_output')
-    def test_leave_fail(self, check_output):
-        charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'nqn': 'nonexistent'}
-
-        charm.on_leave_endpoint_action(event)
-        event.fail.assert_called()
-
-    @mock.patch.object(charm.subprocess, 'check_output')
     def test_list(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
 

@@ -19,6 +19,7 @@ from collections import namedtuple
 import json
 import logging
 import os
+import pickle
 import socket
 import sys
 import uuid
@@ -37,13 +38,30 @@ def _json_dumps(x):
     return json.dumps(x, separators=(',', ':'))
 
 
-def _dump_and_append(out, payload):
-    out.append(_json_dumps(payload) + '\n')
-
-
 class ProxyError(Exception):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+
+class ProxyCommand:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __call__(self, proxy):
+        return proxy.msgloop(self.msg)
+
+
+class ProxyAddListener:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __call__(self, proxy):
+        msg = self.msg.copy()
+        params = msg['params']['listen_address']
+        port, adrfam = utils.get_free_port(params['traddr'])
+        params['adrfam'] = str(adrfam)
+        params['trsvcid'] = str(port)
+        return proxy.msgloop(msg)
 
 
 class Proxy:
@@ -52,7 +70,7 @@ class Proxy:
         self.rpc_sock.connect(rpc_path)
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.receiver.bind(('0.0.0.0', port))
-        self.cmd_file = open(cmd_file, 'a+')
+        self.cmd_file = open(cmd_file, 'a+b')
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
         self.xaddr = xaddr
@@ -66,13 +84,12 @@ class Proxy:
             'list': RPCHandler(self._expand_default, self._post_list),
         }
 
-        for line in self._prepare_file():
-            self._process_line(line)
+        for cmd in self._prepare_file():
+            self._process_cmd(cmd)
 
     def get_spdk_subsystems(self):
         """Return a dictionary describing the subsystems for the gateway."""
-        msg = self.rpc.nvmf_get_subsystems()
-        obj = self._receive_response(json.dumps(msg).encode('utf8'))
+        obj = self.msgloop(self.rpc.nvmf_get_subsystems())
         if not isinstance(obj, dict):
             logger.warning('did not receive a dict from SPDK: %s', obj)
             return
@@ -88,35 +105,43 @@ class Proxy:
 
         return ret
 
+    def _write_cmd(self, cmd):
+        pickle.dump(cmd, self.cmd_file)
+        self.cmd_file.flush()
+
+    def _process_cmd(self, cmd):
+        obj = cmd(self)
+        if not isinstance(obj, dict):
+            logger.error('invalid response received (%s - %s)',
+                         type(obj), obj)
+            raise TypeError()
+        elif 'error' in obj:
+            logger.error('error running command: %s', obj)
+            raise ProxyError(obj['error'])
+
+        return obj
+
     def _prepare_file(self):
         """Read the contents of the bootstrap file or set it up it if empty."""
-        self.cmd_file.seek(0)
-        contents = self.cmd_file.read().strip()
-        if not contents:
+        size = self.cmd_file.tell()
+        if not size:
             # File is empty.
             logger.info('SPDK file is empty; starting bootstrap process')
             payload = self.rpc.nvmf_create_transport(trtype='tcp')
-            contents = _json_dumps(payload) + '\n'
-            self.cmd_file.write(contents)
-            self.cmd_file.flush()
+            cmd = ProxyCommand(payload)
+            self._write_cmd(cmd)
+            yield cmd
+        else:
+            self.cmd_file.seek()
+            while True:
+                try:
+                    yield pickle.load(self.cmd_file)
+                except EOFError:
+                    break
 
-        return contents.split('\n')
-
-    def _expand_line(self, line):
-        """Fill in the placeholders in a command."""
-        xaddr, xport, adrfam = self.xaddr, '0', ''
-        if '{xport}' in line:
-            xport, adrfam = utils.get_free_port(self.xaddr)
-
-        for elem in (('{xport}', xport), ('{xaddr}', xaddr),
-                     ('{adrfam}', adrfam)):
-            line = line.replace(elem[0], str(elem[1]))
-
-        return line
-
-    def _receive_response(self, msg):
+    def msgloop(self, msg):
         """Send an RPC to SPDK and receive the response."""
-        self.rpc_sock.sendall(msg)
+        self.rpc_sock.sendall(json.dumps(msg).encode('utf8'))
         nbytes = self.rpc_sock.recv_into(self.buffer)
         try:
             return json.loads(self.buffer[:nbytes])
@@ -140,35 +165,18 @@ class Proxy:
 
         logger.info('processing request: %s', obj)
         obj = obj.get('params')
-        lines = handler.expand(obj)
-        for line in lines:
-            self._process_line(line)
-            self.cmd_file.write(line)
-            self.cmd_file.write('\n')
-            self.cmd_file.flush()
+        cmds = list(handler.expand(obj))
+        for cmd in cmds:
+            self._process_cmd(cmd)
+
+        # Only write the commands after they've succeeded.
+        for cmd in cmds:
+            self._write_cmd(cmd)
 
         resp = {}
         if handler.post is not None:
             resp = handler.post(obj)
         self.receiver.sendto(_json_dumps(resp).encode('utf8'), addr)
-
-    def _process_line(self, line):
-        """Process a single command (or line)."""
-        if not line:
-            return
-
-        msg = self._expand_line(line).encode('utf8')
-        obj = self._receive_response(msg)
-
-        if not isinstance(obj, dict):
-            logger.error('invalid response received (%s - %s)',
-                         type(obj), obj)
-            raise TypeError()
-        elif 'error' in obj:
-            logger.error('error running command: %s', obj)
-            raise ProxyError(obj['error'])
-
-        return obj
 
     @staticmethod
     def _make_exc_msg(exc):
@@ -238,31 +246,27 @@ class Proxy:
             nqn = NQN_BASE + str(uuid.uuid4())
             msg['nqn'] = nqn   # Inject it to use it in the post handler.
 
-        ret = []
-
         payload = self.rpc.bdev_rbd_create(
             name=bdev_name, pool_name=msg['pool_name'],
             rbd_name=msg['rbd_name'],
             cluster_name=cluster, block_size=4096)
-        _dump_and_append(ret, payload)
+        yield ProxyCommand(payload)
 
         payload = self.rpc.nvmf_create_subsystem(
             nqn=nqn, ana_reporting=True, max_namespaces=2,
             allow_any_host=True   # XXX: Remove when ready.
         )
-        _dump_and_append(ret, payload)
+        yield ProxyCommand(payload)
 
         payload = self.rpc.nvmf_subsystem_add_listener(
             nqn=nqn,
-            listen_address=dict(trtype='tcp', traddr='{xaddr}',
-                                adrfam='{adrfam}', trsvcid='{xport}'))
-        _dump_and_append(ret, payload)
+            listen_address=dict(trtype='tcp', traddr=self.xaddr))
+        yield ProxyAddListener(payload)
 
         payload = self.rpc.nvmf_subsystem_add_ns(
             nqn=nqn,
             namespace=self._ns_dict(bdev_name, nqn))
-        _dump_and_append(ret, payload)
-        return ret
+        yield ProxyCommand(payload)
 
     def _post_create(self, msg):
         subsystems = self.get_spdk_subsystems()
@@ -274,40 +278,34 @@ class Proxy:
     def _expand_remove(self, msg):
         nqn = msg['nqn']
         name = self.get_spdk_subsystems()[nqn]['namespaces'][0]['name']
-        ret = []
         payload = self.rpc.nvmf_subsystem_remove_ns(
             nqn=msg['nqn'], nsid=1)
-        _dump_and_append(ret, payload)
+        yield ProxyCommand(payload)
 
         payload = self.rpc.nvmf_delete_subsystem(nqn=msg['nqn'])
-        _dump_and_append(ret, payload)
+        yield ProxyCommand(payload)
 
         payload = self.rpc.bdev_rbd_delete(name=name)
-        _dump_and_append(ret, payload)
-
-        return ret
+        yield ProxyCommand(payload)
 
     def _expand_cluster_add(self, msg):
         payload = self.rpc.bdev_rbd_register_cluster(
             name=msg['name'], user_id=msg['user'],
             config_param={'key': msg['key'], 'mon_host': msg['mon_host']})
-        return [_json_dumps(payload) + '\n']
+        yield ProxyCommand(payload)
 
     def _expand_join(self, msg):
         nqn = msg['nqn']
         subsystems = self.get_spdk_subsystems()
         if nqn not in subsystems:
-            return []
+            return
 
-        ret = []
         for elem in msg.get('addresses', ()):
             payload = self.rpc.nvmf_discovery_add_referral(
                 subnqn=nqn, address=dict(
                     trtype='tcp', traddr=elem['addr'],
                     trsvcid=str(elem['port'])))
-            _dump_and_append(ret, payload)
-
-        return ret
+            yield ProxyCommand(payload)
 
     def _post_find(self, msg):
         subsys = self.get_spdk_subsystems()[msg['nqn']]
@@ -323,7 +321,7 @@ class Proxy:
             subnqn=msg['nqn'],
             address=dict(
                 traddr=msg['addr'], trsvcid=str(msg['port']), trtype='tcp'))
-        return [_json_dumps(payload) + '\n']
+        yield ProxyCommand(payload)
 
 
 def main():

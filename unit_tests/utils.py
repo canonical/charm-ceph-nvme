@@ -97,8 +97,8 @@ class MockSPDK:
         if isinstance(subsys, bytes):
             return subsys
 
-        subsys['namespaces'][0] =\
-            {'nsid': 1, 'name': params['namespace']['bdev_name']}
+        value = {'nsid': 1, 'name': params['namespace']['bdev_name']}
+        subsys['namespaces'][0] = value
 
     def _mock_remove_ns(self, params):
         subsys = self._find_subsys(params['nqn'])
