@@ -16,6 +16,7 @@
 
 import json
 from mock import MagicMock
+import tempfile
 import unittest
 import unittest.mock as mock
 
@@ -250,3 +251,41 @@ class TestCharm(unittest.TestCase):
         charm.on_delete_host_action(event)
 
         event.fail.assert_called()
+
+    @mock.patch.object(charm.subprocess, 'check_call')
+    def test_reset_overwrite(self, check_call):
+        self.harness.begin()
+        with tempfile.NamedTemporaryFile(mode='w+') as file:
+            file.write('!!!')
+            file.flush()
+
+            prev = charm.PROXY_CMDS_FILE
+            try:
+                charm.PROXY_CMDS_FILE = file.name
+                self.harness.charm.on_reset_target_action(MagicMock())
+                file.seek(0)
+                self.assertFalse(file.read())
+            finally:
+                charm.PROXY_CMDS_FILE = prev
+
+    @mock.patch.object(charm.subprocess, 'check_call')
+    def test_reset_fail(self, check_call):
+        check_call.side_effect = Exception('')
+        self.harness.begin()
+
+        event = MagicMock()
+        event.fail = MagicMock()
+        with tempfile.NamedTemporaryFile(mode='w+') as file:
+            contents = '!!!'
+            file.write(contents)
+            file.flush()
+
+            prev = charm.PROXY_CMDS_FILE
+            try:
+                charm.PROXY_CMDS_FILE = file.name
+                self.harness.charm.on_reset_target_action(event)
+                file.seek(0)
+                event.fail.assert_called()
+                self.assertEqual(file.read(), contents)
+            finally:
+                charm.PROXY_CMDS_FILE = prev

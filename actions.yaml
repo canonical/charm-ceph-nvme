@@ -81,3 +81,12 @@ delete-host:
   required:
     - nqn
     - hostnqn
+
+reset-target:
+  description: "Restarts the NVMe-oF target with a clear state"
+
+pause:
+  description: "Pauses all the Ceph NVMe-oF services"
+
+resume:
+  description: "Resumes previously paused services"

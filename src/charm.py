@@ -70,6 +70,9 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.on.list_endpoints_action, self.on_list_endpoints_action)
         obs(self.on.add_host_action, self.on_add_host_action)
         obs(self.on.delete_host_action, self.on_delete_host_action)
+        obs(self.on.reset_target_action, self.on_reset_target_action)
+        obs(self.on.pause_action, self.on_pause_action)
+        obs(self.on.resume_action, self.on_resume_action)
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
 
@@ -400,6 +403,32 @@ class CephNVMECharm(ops.CharmBase):
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
+
+    def _pause_or_resume(self, cmd, event):
+        try:
+            subprocess.check_call(['sudo', 'systemctl', cmd, 'nvmf_proxy'])
+            subprocess.check_call(['sudo', 'systemctl', cmd, 'nvmf_tgt'])
+            return True
+        except Exception as exc:
+            event.fail('Failed to %s services: %s' % (cmd, str(exc)))
+            return False
+
+    def _pause(self, event):
+        return self._pause_or_resume('stop', event)
+
+    def _resume(self, event):
+        return self._pause_or_resume('start', event)
+
+    def on_reset_target_action(self, event):
+        if self._pause(event):
+            with open(PROXY_CMDS_FILE, 'w'):
+                self._resume(event)
+
+    def on_pause_action(self, event):
+        self._pause(event)
+
+    def on_resume_action(self, event):
+        self._resume(event)
 
     def _install_packages(self, packages):
         # Code taken from charmhelpers.
