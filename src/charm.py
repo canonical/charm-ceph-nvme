@@ -70,6 +70,7 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.on.list_endpoints_action, self.on_list_endpoints_action)
         obs(self.on.add_host_action, self.on_add_host_action)
         obs(self.on.delete_host_action, self.on_delete_host_action)
+        obs(self.on.list_hosts_action, self.on_list_hosts_action)
         obs(self.on.reset_target_action, self.on_reset_target_action)
         obs(self.on.pause_action, self.on_pause_action)
         obs(self.on.resume_action, self.on_resume_action)
@@ -403,6 +404,16 @@ class CephNVMECharm(ops.CharmBase):
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
+
+    def on_list_hosts_action(self, event):
+        nqn = event.params.get('nqn')
+        res = self._msgloop(self.rpc.host_list(nqn=nqn))
+
+        if 'error' in res:
+            event.fail('NQN %s not found' % nqn)
+            return
+
+        event.set_results({'hosts': res['hosts']})
 
     def _pause_or_resume(self, cmd, event):
         try:

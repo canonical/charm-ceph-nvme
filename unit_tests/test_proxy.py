@@ -66,7 +66,7 @@ class TestProxy(unittest.TestCase):
         msg = json.dumps(msg).encode('utf8')
         self.local_sock.sendto(msg, PROXY_ADDR)
 
-        while self.spdk.loop(0.3):
+        while self.spdk.loop(0.15):
             pass
 
         return json.loads(self.local_sock.recv(2048))
@@ -108,10 +108,18 @@ class TestProxy(unittest.TestCase):
         else:
             raise KeyError('host not found')
 
+        msg = self.rpc.host_list(nqn=prev['nqn'])
+        rv = self.msgloop(msg)
+        self.assertEqual(rv, ['host'])
+
         msg = self.rpc.host_add(host='*', nqn=prev['nqn'])
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
         self.assertTrue(self.spdk.subsystems[prev['nqn']]['hosts'][0])
+
+        msg = self.rpc.host_list(nqn=prev['nqn'])
+        rv = self.msgloop(msg)
+        self.assertEqual('*', rv)
 
         msg = self.rpc.host_del(host='host', nqn=prev['nqn'])
         rv = self.msgloop(msg)

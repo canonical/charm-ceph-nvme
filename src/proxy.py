@@ -102,6 +102,7 @@ class Proxy:
             'list': RPCHandler(self._expand_default, self._post_list),
             'host_add': RPCHandler(self._expand_host_add, None),
             'host_del': RPCHandler(self._expand_host_del, None),
+            'host_list': RPCHandler(self._expand_default, self._post_host_list)
         }
 
         for cmd in self._prepare_file():
@@ -333,6 +334,14 @@ class Proxy:
         subsystems = self.get_spdk_subsystems()
         return [{'nqn': nqn, **self._subsystem_to_dict(subsys)}
                 for nqn, subsys in subsystems.items()]
+
+    def _post_host_list(self, msg):
+        subsys = self.get_spdk_subsystems().get(msg['nqn'])
+        if subsys is None:
+            return {'error': 'nqn not found'}
+        elif subsys.get('allow_any_host'):
+            return '*'
+        return subsys.get('hosts', [])
 
     def _expand_leave(self, msg):
         payload = self.rpc.nvmf_discovery_remove_referral(

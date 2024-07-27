@@ -126,8 +126,14 @@ class MockSPDK:
                 return
 
     def _mock_get_subsystems(self, params):
-        ret = list({'nqn': nqn, **value}
-                   for nqn, value in self.subsystems.items())
+        ret = []
+        for nqn, value in self.subsystems.items():
+            elem = {'nqn': nqn, **value}
+            hosts = elem.pop('hosts')
+            elem['allow_any_host'] = hosts[0][0]
+            elem['hosts'] = [host[0] for host in hosts[1:]]
+            ret.append(elem)
+
         return json.dumps({'result': ret}).encode('utf8')
 
     @staticmethod

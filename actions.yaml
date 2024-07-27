@@ -82,6 +82,16 @@ delete-host:
     - nqn
     - hostnqn
 
+list-hosts:
+  description: "List the allowed hosts for an endpoint"
+  params:
+    nqn:
+      type: string
+      description: "The NQN of the endpoint"
+
+  required:
+    - nqn
+
 reset-target:
   description: "Restarts the NVMe-oF target with a clear state"
 
