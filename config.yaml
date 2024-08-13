@@ -12,3 +12,9 @@ options:
     default: 64321
     description: |
       The port on which the internal proxy will be bound to.
+
+  dashboard-password:
+    type: string
+    default: ''
+    description: |
+      The password for the NVMe tab in the dashboard.

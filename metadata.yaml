@@ -22,3 +22,6 @@ requires:
 peers:
   peers:
     interface: peers
+provides:
+  admin-access:
+    interface: ceph-iscsi-admin-access

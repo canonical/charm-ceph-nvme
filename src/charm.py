@@ -24,6 +24,7 @@ import socket
 import subprocess
 
 import interface_ceph_client.ceph_client as ceph_client
+import interface_ceph_iscsi_admin_access.admin_access as admin_access
 import ops
 
 import utils
@@ -60,6 +61,8 @@ class CephNVMECharm(ops.CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
         self.client = ceph_client.CephClientRequires(self, 'ceph-client')
+        self.admin_access = admin_access.CephISCSIAdminAccessProvides(
+            self, 'admin-access')
         self.rpc = utils.RPC()
         obs = self.framework.observe
         obs(self.on.start, self._on_start)
@@ -76,6 +79,21 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.on.resume_action, self.on_resume_action)
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
+        obs(self.admin_access.on.admin_access_request, self.on_admin_access)
+
+    def on_admin_access(self, event):
+        passwd = self.config.get('dashboard-password')
+        if not passwd:
+            logger.info('Defering setup due to missing password')
+            event.defer()
+            return
+
+        scheme = 'http'
+        self.admin_access.publish_gateway(
+            socket.getfqdn(),
+            'admin',
+            passwd,
+            scheme)
 
     def bind_addr(self):
         """Get the charm's local binding address."""
