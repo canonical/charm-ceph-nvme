@@ -1,6 +1,11 @@
 type: charm
 parts:
   charm:
+    plugin: charm
+    source: .
+  spdk:
+    plugin: dump
+    source: .
     build-packages: [build-essential, librbd-dev, librados-dev, libnuma-dev,
                      libfuse3-dev, libaio-dev, libssl-dev, libjson-c-dev,
                      uuid-dev, libiscsi-dev, pkgconf, meson, python3-grpcio,
@@ -23,10 +28,17 @@ parts:
     prime:
       - spdk
 
-bases:
-  - build-on:
-    - name: ubuntu
-      channel: "22.04"
-    run-on:
-    - name: ubuntu
-      channel: "22.04"
+base: ubuntu@22.04
+platforms:
+  amd64:
+    build-on: amd64
+    build-for: amd64
+  arm64:
+    build-on: arm64
+    build-for: arm64
+  ppc64el:
+    build-on: ppc64el
+    build-for: ppc64el
+  s390x:
+    build-on: s390x
+    build-for: s390x
