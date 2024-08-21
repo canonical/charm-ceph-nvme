@@ -5,7 +5,7 @@ options:
     description: |
       The set of CPUs on which the SPDK target may run. This can be
       an integer, which specifies the number of cores, or a squared-bracketed
-      list of CPU id's.
+      list of CPU id's. By default, half the CPU cores will be used.
 
   proxy-port:
     type: int
