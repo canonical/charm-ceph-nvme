@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import json
+import logging
 import select
 import socket
 
@@ -24,150 +25,126 @@ class MockSPDK:
         new_sock, _ = sock.accept()
         sock.close()
         self.sock = new_sock
+        self.logger = logging.getLogger('spdk')
+        self.rbds = {}
         self.bdevs = {}
         self.clusters = set()
-        self.subsystems = {}
-        self.referrals = []
-        self.handlers = {
-            'nvmf_create_transport': self._mock_create_transport,
-            'nvmf_get_subsystems': self._mock_get_subsystems,
-            'bdev_rbd_register_cluster': self._mock_register_cluster,
-            'bdev_rbd_create': self._mock_rbd_create,
-            'bdev_rbd_delete': self._mock_rbd_delete,
-            'nvmf_create_subsystem': self._mock_create_subsystem,
-            'nvmf_subsystem_add_listener': self._mock_add_listener,
-            'nvmf_subsystem_add_ns': self._mock_add_ns,
-            'nvmf_subsystem_remove_ns': self._mock_remove_ns,
-            'nvmf_delete_subsystem': self._mock_delete_subsystem,
-            'nvmf_discovery_add_referral': self._mock_add_referral,
-            'nvmf_discovery_remove_referral': self._mock_remove_referral,
-            'nvmf_subsystem_add_host': self._mock_add_host,
-            'nvmf_subsystem_remove_host': self._mock_remove_host,
-            'nvmf_subsystem_allow_any_host': self._mock_allow_any_host,
-        }
+        self.nvmf_subsys = {}
+
+    @staticmethod
+    def _list_rmidx(lst, ix):
+        return lst[:ix] + lst[ix + 1:]
 
     def _find_subsys(self, nqn):
         return self.subsystems.get(nqn, b'{"error":"subsystem not found"}')
 
-    def _mock_create_transport(self, _):
+    @staticmethod
+    def dict_eq(x, y, keys):
+        for k in keys:
+            if k not in x or k not in y or x[k] != y[k]:
+                return False
+        return True
+
+    def nvmf_create_transport(self, **kwargs):
         pass
 
-    def _mock_register_cluster(self, params):
-        name = params['name']
-        if name in self.clusters:
-            return b'{"error": "cluster already registered"}'
-        self.clusters.add(name)
+    def nvmf_create_subsystem(self, **kwargs):
+        nqn = kwargs['nqn']
+        if nqn in self.nvmf_subsys:
+            raise ValueError('NQN already present')
 
-    def _mock_rbd_create(self, params):
-        cluster = params['cluster_name']
+        self.nvmf_subsys[nqn] = {'listen_addresses': [], 'namespaces': [],
+                                 'allow_any_host': False,
+                                 'referrals': [], 'hosts': [], **kwargs}
+
+    def nvmf_delete_subsystem(self, **kwargs):
+        del self.nvmf_subsys[kwargs['nqn']]
+
+    def nvmf_subsystem_add_listener(self, **kwargs):
+        addrs = self.nvmf_subsys[kwargs['nqn']]['listen_addresses']
+        addrs.append(kwargs['listen_address'])
+
+    def nvmf_subsystem_remove_listener(self, **kwargs):
+        subsys = self.nvmf_subsys[kwargs['nqn']]
+        ls = subsys['listener_addresses']
+        for ix, listener in enumerate(ls):
+            if self.dict_eq(listener, kwargs,
+                            ('traddr', 'trtype', 'adrfam')):
+                break
+        else:
+            raise ValueError('listener not found')
+
+        subsys['listen_addresses'] = self._list_rmidx(ls, ix)
+
+    def nvmf_subsystem_add_ns(self, **kwargs):
+        nqn = kwargs.pop('nqn')
+        ns = kwargs['namespace']
+        ns['name'] = ns['bdev_name']
+        self.nvmf_subsys[nqn]['namespaces'].append(ns)
+
+    def nvmf_get_subsystems(self, **kwargs):
+        return list(self.nvmf_subsys.values())
+
+    def nvmf_subsystem_remove_ns(self, **kwargs):
+        nqn, nsid = kwargs['nqn'], kwargs['nsid']
+        subsys = self.nvmf_subsys[nqn]
+        listeners = subsys['listen_addresses']
+        if nsid > len(listeners):
+            raise ValueError('NSID does not exist')
+
+        subsys['listen_addresses'] = self._list_rmidx(listeners, nsid - 1)
+
+    def nvmf_discovery_add_referral(self, **kwargs):
+        nqn = kwargs['subnqn']
+        self.nvmf_subsys[nqn]['referrals'].append(kwargs['address'])
+
+    def nvmf_discovery_remove_referral(self, **kwargs):
+        nqn = kwargs['subnqn']
+        subsys = self.nvmf_subsys[nqn]
+        for ix, ref in enumerate(subsys['referrals']):
+            if self.dict_eq(ref, kwargs['address'],
+                            ('traddr', 'trsvcid', 'trtype')):
+                break
+        else:
+            raise ValueError('referral not found')
+
+        subsys['referrals'] = self._list_rmidx(subsys['referrals'], ix)
+
+    def nvmf_subsystem_allow_any_host(self, **kwargs):
+        self.nvmf_subsys[kwargs['nqn']]['allow_any_host'] = (
+            kwargs['allow_any_host'])
+
+    def nvmf_subsystem_add_host(self, **kwargs):
+        self.nvmf_subsys[kwargs['nqn']]['hosts'].append(kwargs['host'])
+
+    def nvmf_subsystem_remove_host(self, **kwargs):
+        subsys = self.nvmf_subsys[kwargs['nqn']]
+        for ix, host in enumerate(subsys['hosts']):
+            if host == kwargs['host']:
+                break
+        else:
+            raise ValueError('host not found')
+
+        subsys['hosts'] = self._list_rmidx(subsys['hosts'], ix)
+
+    def bdev_rbd_create(self, **kwargs):
+        name = kwargs['name']
+        if name in self.rbds:
+            raise ValueError('RBD bdev already present')
+
+        cluster = kwargs['cluster_name']
         if cluster not in self.clusters:
-            return b'{"error":"cluster not found"}'
-        self.bdevs.setdefault(params['name'],
-                              {'pool': params['pool_name'],
-                               'image': params['rbd_name'],
-                               'cluster': params['cluster_name']})
+            raise ValueError('cluster does not exist')
+        self.rbds[name] = kwargs
 
-    def _mock_rbd_delete(self, params):
-        del self.bdevs[params['name']]
+    def bdev_rbd_delete(self, **kwargs):
+        del self.rbds[kwargs['name']]
 
-    def _mock_create_subsystem(self, params):
-        dfl = {'listen_addresses': [], 'namespaces': [None],
-                'hosts': [(False, None)]}
-        self.subsystems.setdefault(params['nqn'], dfl)
-
-    def _mock_add_listener(self, params):
-        addr = params['listen_address']
-        subsys = self._find_subsys(params['nqn'])
-        if isinstance(subsys, bytes):
-            return subsys
-
-        params = params.copy()
-        del params['listen_address']
-        params.update(addr)
-        subsys['listen_addresses'].append(params)
-
-    def _mock_add_ns(self, params):
-        subsys = self._find_subsys(params['nqn'])
-        if isinstance(subsys, bytes):
-            return subsys
-
-        value = {'nsid': 1, 'name': params['namespace']['bdev_name']}
-        subsys['namespaces'][0] = value
-
-    def _mock_remove_ns(self, params):
-        subsys = self._find_subsys(params['nqn'])
-        if isinstance(subsys, bytes):
-            return subsys
-
-        subsys['namespaces'][0] = None
-
-    def _mock_delete_subsystem(self, params):
-        del self.subsystems[params['nqn']]
-
-    def _mock_add_referral(self, params):
-        self.referrals.append(params)
-
-    def _mock_remove_referral(self, params):
-        for i, rf in enumerate(self.referrals):
-            if (rf['nqn'] == params['nqn'] and
-                    rf['addr'] == params['addr'] and
-                    rf['port'] == params['port']):
-                del self.referrals[i]
-                return
-
-    def _mock_get_subsystems(self, params):
-        ret = []
-        for nqn, value in self.subsystems.items():
-            elem = {'nqn': nqn, **value}
-            hosts = elem.pop('hosts')
-            elem['allow_any_host'] = hosts[0][0]
-            elem['hosts'] = [host[0] for host in hosts[1:]]
-            ret.append(elem)
-
-        return json.dumps({'result': ret}).encode('utf8')
-
-    @staticmethod
-    def _find_host(lst, host):
-        for i, elem in enumerate(lst):
-            if elem[0] == host:
-                return i
-
-    def _mock_add_host(self, params):
-        host = params['host']
-        subsys = self._find_subsys(params['nqn'])
-
-        if isinstance(subsys, bytes):
-            return subsys
-        elif self._find_host(subsys['hosts'], host) is not None:
-            return b'{"error": "host already present"}'
-
-        key = params.get('psk')
-        if key is not None:
-            with open(key, 'r') as file:
-                key = file.read()
-
-        subsys['hosts'].append((host, key))
-
-    def _mock_remove_host(self, params):
-        host = params['host']
-        subsys = self._find_subsys(params['nqn'])
-
-        if isinstance(subsys, bytes):
-            return subsys
-
-        hosts = subsys['hosts']
-        idx = self._find_host(hosts, host)
-        if idx is None:
-            return b'{"error": "host not present in nqn"}'
-
-        subsys['hosts'] = hosts[:idx] + hosts[idx + 1:]
-
-    def _mock_allow_any_host(self, params):
-        subsys = self._find_subsys(params['nqn'])
-        if isinstance(subsys, bytes):
-            return subsys
-
-        subsys['hosts'][0] = (params['allow_any_host'], None)
+    def bdev_rbd_register_cluster(self, **kwargs):
+        name = kwargs['name']
+        if name in self.clusters:
+            raise ValueError('cluster already registered')
+        self.clusters.add(name)
 
     def loop(self, timeout=None):
         rd, _, _ = select.select([self.sock], [], [], timeout)
@@ -177,18 +154,17 @@ class MockSPDK:
         buf = self.sock.recv(2048)
         obj = json.loads(buf)
 
-        method = obj['method']
-        handler = self.handlers.get(method)
-        if handler is None:
-            self.sock.sendall(b'{"error":"method not found"}')
+        name = obj['method']
+        method = getattr(self, name, None)
+        if method is None:
+            err = {'error': 'method %s not found' % name}
+            self.sock.sendall(json.dumps(err).encode('utf8'))
             return True
 
         try:
-            rv = handler(obj.get('params', {}))
-            if rv is None:
-                rv = b'{"result":0}'
-            self.sock.sendall(rv)
-        except Exception:
-            self.sock.sendall(b'{"error":"unexpected error"}')
+            ret = {'result': method(**obj.get('params', {}))}
+        except Exception as exc:
+            ret = {'error': str(exc)}
 
+        self.sock.sendall(json.dumps(ret).encode('utf8'))
         return True

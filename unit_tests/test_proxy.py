@@ -87,7 +87,8 @@ class TestProxy(unittest.TestCase):
         self.assertNotIn("error", rv)
 
         msg = self.rpc.create(
-            cluster='ceph', pool_name='mypool', rbd_name='myimage')
+            nqn='nqn.1', cluster='ceph', pool_name='mypool',
+            rbd_name='myimage')
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
         prev = rv
@@ -125,8 +126,9 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
-        msg = self.rpc.leave(nqn='nqn.1', addr='127.0.01', port=65001)
-        self.msgloop(msg)
+        msg = self.rpc.leave(nqn='nqn.1', addr='127.0.0.1', port=65001)
+        rv = self.msgloop(msg)
+        self.assertNotIn('error', rv)
 
         rv = self.msgloop(self.rpc.list())
         self.assertEqual(len(rv), 1)
