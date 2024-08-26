@@ -59,7 +59,7 @@ class TestProxy(unittest.TestCase):
         self.spdk.close()
 
     def _thread_entry(self):
-        srv = proxy.Proxy(LOCAL_PORT, self.file.name, '127.0.0.1', LOCAL_SOCK)
+        srv = proxy.Proxy(LOCAL_PORT, self.file.name, LOCAL_SOCK)
         srv.serve()
 
     def msgloop(self, msg):
@@ -85,10 +85,11 @@ class TestProxy(unittest.TestCase):
 
         msg = self.rpc.find(nqn=prev['nqn'])
         rv = self.msgloop(msg)
+        print ("AAAAAAAAAAAAAAA %s" % (rv,))
         self.assertEqual(rv.get('pool'), 'mypool')
         self.assertEqual(rv.get('image'), 'myimage')
         self.assertEqual(rv.get('cluster'), 'ceph')
-        self.assertEqual(rv.get('addr'), '127.0.0.1')
+        self.assertEqual(rv.get('addr'), '0.0.0.0')
         self.assertIn('port', rv)
 
         msg = self.rpc.join(

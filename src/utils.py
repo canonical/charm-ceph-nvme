@@ -110,6 +110,6 @@ def get_free_port(address='127.0.0.1'):
 
     s = socket.socket(family, socket.SOCK_DGRAM)
     s.bind((address, 0))
-    _, port = s.getsockname()
+    _, *extra = s.getsockname()
     s.close()
-    return port, fstr
+    return extra[0], fstr

@@ -218,7 +218,7 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_add_host(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'host': 'host_nqn', 'nqn': 'nqn.1'}
+        event.params = {'hostnqn': 'host_nqn', 'nqn': 'nqn.1'}
 
         charm.on_add_host_action(event)
         event.set_results.assert_called()
@@ -229,7 +229,7 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_add_host_failed(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'host': 'host_nqn', 'nqn': 'nonexistent'}
+        event.params = {'hostnqn': 'host_nqn', 'nqn': 'nonexistent'}
 
         charm.on_add_host_action(event)
         event.fail.assert_called()

@@ -8,12 +8,9 @@ description: |
 tags:
   - openstack
   - storage
-series:
-  - focal
-  - jammy
-  - noble
 subordinate: false
-min-juju-version: 2.7.6
+assumes:
+  - juju >= 3
 extra-bindings:
   public:
 requires:

@@ -52,17 +52,64 @@ class ProxyCommand:
         return proxy.msgloop(self.msg)
 
 
-class ProxyAddListener:
-    def __init__(self, msg):
+class ProxyCreateEndpoint:
+    def __init__(self, msg, bdev_name, cluster):
         self.msg = msg
+        self.bdev_name = bdev_name
+        self.cluster = cluster
 
-    def __call__(self, proxy):
-        msg = self.msg.copy()
-        params = msg['params']['listen_address']
+    @staticmethod
+    def _check_reply(msg, proxy):
+        reply = proxy.msgloop(msg)
+        if proxy.is_error(reply):
+            raise ValueError('%s failed: %s' % (msg['method'], reply))
+        return reply
+
+    def _add_listener(self, proxy, cleanup, **kwargs):
+        params = kwargs['listen_address']
         port, adrfam = utils.get_free_port(params['traddr'])
         params['adrfam'] = str(adrfam)
         params['trsvcid'] = str(port)
-        return proxy.msgloop(msg)
+        payload = proxy.rpc.nvmf_subsystem_add_listener(**kwargs)
+        self._check_reply(payload, proxy)
+        cleanup.append(proxy.rpc.nvmf_subsystem_remove_listener(**kwargs))
+
+    def __call__(self, proxy):
+        cleanup = []
+        rpc = proxy.rpc
+        nqn = self.msg['nqn']
+        try:
+            payload = rpc.bdev_rbd_create(
+                name=self.bdev_name, pool_name=self.msg['pool_name'],
+                rbd_name=self.msg['rbd_name'],
+                cluster_name=self.cluster, block_size=4096)
+            self._check_reply(payload, proxy)
+            cleanup.append(rpc.bdev_rbd_delete(name=self.bdev_name))
+
+            payload = rpc.nvmf_create_subsystem(
+                nqn=nqn, ana_reporting=True, max_namespaces=2)
+            self._check_reply(payload, proxy)
+            cleanup.append(rpc.nvmf_delete_subsystem(nqn=nqn))
+
+            # Add ipv4 and ipv6 listeners.
+            self._add_listener(
+                proxy, cleanup,
+                nqn=nqn,
+                listen_address=dict(trtype='tcp', traddr='0.0.0.0'))
+
+            self._add_listener(
+                proxy, cleanup,
+                nqn=nqn,
+                listen_address=dict(trtype='tcp', traddr='::'))
+
+            payload = rpc.nvmf_subsystem_add_ns(
+                nqn=nqn,
+                namespace=proxy.ns_dict(self.bdev_name, nqn))
+            return self._check_reply(payload, proxy)
+        except Exception:
+            for call in reversed(cleanup):
+                proxy.msgloop(call)
+            raise
 
 
 class ProxyAddHost:
@@ -83,7 +130,7 @@ class ProxyAddHost:
 
 
 class Proxy:
-    def __init__(self, port, cmd_file, xaddr, rpc_path):
+    def __init__(self, port, cmd_file, rpc_path):
         self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.rpc_sock.connect(rpc_path)
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -91,7 +138,6 @@ class Proxy:
         self.cmd_file = open(cmd_file, 'a+b')
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
-        self.xaddr = xaddr
         self.handlers = {
             'create': RPCHandler(self._expand_create, self._post_create),
             'remove': RPCHandler(self._expand_remove, None),
@@ -159,6 +205,10 @@ class Proxy:
                     yield pickle.load(self.cmd_file)
                 except EOFError:
                     break
+
+    @staticmethod
+    def is_error(msg):
+        return not isinstance(msg, dict) or 'error' in msg
 
     def msgloop(self, msg):
         """Send an RPC to SPDK and receive the response."""
@@ -234,7 +284,7 @@ class Proxy:
         return ret
 
     @staticmethod
-    def _ns_dict(bdev_name, nqn):
+    def ns_dict(bdev_name, nqn):
         # In order for namespaces to be equal, the following must match:
         # namespace ID (always set to 1)
         # NGUID (32 bytes)
@@ -267,25 +317,7 @@ class Proxy:
             nqn = NQN_BASE + str(uuid.uuid4())
             msg['nqn'] = nqn   # Inject it to use it in the post handler.
 
-        payload = self.rpc.bdev_rbd_create(
-            name=bdev_name, pool_name=msg['pool_name'],
-            rbd_name=msg['rbd_name'],
-            cluster_name=cluster, block_size=4096)
-        yield ProxyCommand(payload)
-
-        payload = self.rpc.nvmf_create_subsystem(
-            nqn=nqn, ana_reporting=True, max_namespaces=2)
-        yield ProxyCommand(payload)
-
-        payload = self.rpc.nvmf_subsystem_add_listener(
-            nqn=nqn,
-            listen_address=dict(trtype='tcp', traddr=self.xaddr))
-        yield ProxyAddListener(payload)
-
-        payload = self.rpc.nvmf_subsystem_add_ns(
-            nqn=nqn,
-            namespace=self._ns_dict(bdev_name, nqn))
-        yield ProxyCommand(payload)
+        yield ProxyCreateEndpoint(msg, bdev_name, cluster)
 
     def _post_create(self, msg):
         subsystems = self.get_spdk_subsystems()

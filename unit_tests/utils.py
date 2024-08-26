@@ -78,15 +78,6 @@ class MockSPDK:
 
     def _mock_add_listener(self, params):
         addr = params['listen_address']
-        try:
-            socket.inet_pton(socket.AF_INET, addr['traddr'])
-            int(addr['trsvcid'])
-        except Exception:
-            return b'{"error":"invalid parameters"}'
-
-        if addr['adrfam'].lower() != 'ipv4':
-            return b'{"error":"invalid address family"}'
-
         subsys = self._find_subsys(params['nqn'])
         if isinstance(subsys, bytes):
             return subsys

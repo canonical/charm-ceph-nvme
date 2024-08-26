@@ -391,7 +391,7 @@ class CephNVMECharm(ops.CharmBase):
     def on_add_host_action(self, event):
         nqn = event.params.get('nqn')
         key = event.params.get('key')
-        kwargs = dict(nqn=nqn, host=event.params.get('host'))
+        kwargs = dict(nqn=nqn, host=event.params.get('hostnqn'))
         if key:
             kwargs['key'] = key
 
@@ -409,7 +409,7 @@ class CephNVMECharm(ops.CharmBase):
 
     def on_delete_host_action(self, event):
         nqn = event.params.get('nqn')
-        host = event.params.get('host')
+        host = event.params.get('hostnqn')
         msg = self.rpc.host_del(nqn=nqn, host=host)
         sock = self._rpc_sock()
         res = self._msgloop(msg, sock=sock)
@@ -435,8 +435,8 @@ class CephNVMECharm(ops.CharmBase):
 
     def _pause_or_resume(self, cmd, event):
         try:
-            subprocess.check_call(['sudo', 'systemctl', cmd, 'nvmf_proxy'])
             subprocess.check_call(['sudo', 'systemctl', cmd, 'nvmf_tgt'])
+            subprocess.check_call(['sudo', 'systemctl', cmd, 'nvmf_proxy'])
             return True
         except Exception as exc:
             event.fail('Failed to %s services: %s' % (cmd, str(exc)))
@@ -477,8 +477,7 @@ class CephNVMECharm(ops.CharmBase):
                                  args=' '.join([nvmf_path, '-m', cpumask]))
 
         proxy_path = os.path.realpath(charm_dir + '/src/proxy.py')
-        args = ' '.join([str(self.config['proxy-port']),
-                         PROXY_CMDS_FILE, self.egress_addr()])
+        args = ' '.join([str(self.config['proxy-port']), PROXY_CMDS_FILE])
 
         utils.create_systemd_svc(PROXY_FILE, SYSTEMD_TEMPLATE,
                                  description='proxy server for target',
