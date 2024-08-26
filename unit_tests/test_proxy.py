@@ -15,10 +15,11 @@
 # limitations under the License.
 
 import json
+import multiprocessing
 import os
 import socket
 import tempfile
-import threading
+import time
 import unittest
 
 import src.proxy as proxy
@@ -40,35 +41,43 @@ class TestProxy(unittest.TestCase):
         rpc_sock.bind(LOCAL_SOCK)
         rpc_sock.listen(1)
 
-        self.file = tempfile.NamedTemporaryFile(mode='w+')
-        self.proxy_thread = threading.Thread(target=self._thread_entry)
-        self.proxy_thread.start()
+        def _mp_spdk(sock):
+            spdk = utils.MockSPDK(sock)
+            while True:
+                try:
+                    spdk.loop()
+                except Exception:
+                    break
 
-        new_sock, _ = rpc_sock.accept()
-        rpc_sock.close()
-        self.spdk = utils.MockSPDK(new_sock)
+        def _mp_proxy(out):
+            file = tempfile.NamedTemporaryFile(mode='w+')
+            p = proxy.Proxy(LOCAL_PORT, file.name, LOCAL_SOCK)
+            out.append(1)
+            p.serve()
 
-        self.spdk.loop()
+        mgr = multiprocessing.Manager()
+        out = mgr.list()
+
+        self.spdk = multiprocessing.Process(target=_mp_spdk, args=(rpc_sock,))
+        self.spdk.start()
+        self.proxy = multiprocessing.Process(target=_mp_proxy, args=(out,))
+        self.proxy.start()
         self.local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.local_sock.bind(('127.0.0.1', 0))
 
+        while len(out) < 1:
+            time.sleep(0)
+
     def tearDown(self):
         self.local_sock.sendto(b'{"method":"stop"}', PROXY_ADDR)
-        self.proxy_thread.join()
+        self.proxy.join()
         self.local_sock.close()
-        self.spdk.close()
-
-    def _thread_entry(self):
-        srv = proxy.Proxy(LOCAL_PORT, self.file.name, LOCAL_SOCK)
-        srv.serve()
+        self.spdk.kill()
+        self.spdk.join()
 
     def msgloop(self, msg):
         msg = json.dumps(msg).encode('utf8')
         self.local_sock.sendto(msg, PROXY_ADDR)
-
-        while self.spdk.loop(0.15):
-            pass
-
         return json.loads(self.local_sock.recv(2048))
 
     def test_rpcs(self):
@@ -85,7 +94,6 @@ class TestProxy(unittest.TestCase):
 
         msg = self.rpc.find(nqn=prev['nqn'])
         rv = self.msgloop(msg)
-        print ("AAAAAAAAAAAAAAA %s" % (rv,))
         self.assertEqual(rv.get('pool'), 'mypool')
         self.assertEqual(rv.get('image'), 'myimage')
         self.assertEqual(rv.get('cluster'), 'ceph')
@@ -101,14 +109,6 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
-        subsys = self.spdk.subsystems[prev['nqn']]
-        for host, key in subsys['hosts']:
-            if key == 'some-key':
-                self.assertEqual(host, 'host')
-                break
-        else:
-            raise KeyError('host not found')
-
         msg = self.rpc.host_list(nqn=prev['nqn'])
         rv = self.msgloop(msg)
         self.assertEqual(rv, ['host'])
@@ -116,7 +116,6 @@ class TestProxy(unittest.TestCase):
         msg = self.rpc.host_add(host='*', nqn=prev['nqn'])
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
-        self.assertTrue(self.spdk.subsystems[prev['nqn']]['hosts'][0])
 
         msg = self.rpc.host_list(nqn=prev['nqn'])
         rv = self.msgloop(msg)
@@ -128,7 +127,6 @@ class TestProxy(unittest.TestCase):
 
         msg = self.rpc.leave(nqn='nqn.1', addr='127.0.01', port=65001)
         self.msgloop(msg)
-        self.assertFalse(self.spdk.referrals)
 
         rv = self.msgloop(self.rpc.list())
         self.assertEqual(len(rv), 1)

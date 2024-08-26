@@ -404,12 +404,10 @@ def main():
     parser.add_argument('port', help='proxy server port', type=int)
     parser.add_argument('cmdfile', help='path to file to save commands',
                         type=str, default='/var/lib/nvme-of/cmds.json')
-    parser.add_argument('external_addr', help='external address for listeners',
-                        type=str, default='0.0.0.0')
     parser.add_argument('-s', dest='sock', help='local socket for RPC',
                         type=str, default='/var/tmp/spdk.sock')
     args = parser.parse_args()
-    proxy = Proxy(args.port, args.cmdfile, args.external_addr, args.sock)
+    proxy = Proxy(args.port, args.cmdfile, args.sock)
     proxy.serve()
 
 

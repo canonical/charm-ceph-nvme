@@ -21,7 +21,9 @@ import socket
 
 class MockSPDK:
     def __init__(self, sock):
-        self.sock = sock
+        new_sock, _ = sock.accept()
+        sock.close()
+        self.sock = new_sock
         self.bdevs = {}
         self.clusters = set()
         self.subsystems = {}
@@ -43,9 +45,6 @@ class MockSPDK:
             'nvmf_subsystem_remove_host': self._mock_remove_host,
             'nvmf_subsystem_allow_any_host': self._mock_allow_any_host,
         }
-
-    def close(self):
-        self.sock.close()
 
     def _find_subsys(self, nqn):
         return self.subsystems.get(nqn, b'{"error":"subsystem not found"}')
