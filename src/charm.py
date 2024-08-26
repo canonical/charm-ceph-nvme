@@ -226,10 +226,19 @@ class CephNVMECharm(ops.CharmBase):
 
     @staticmethod
     def _event_set_create_results(event, response, units):
-        event.set_results({'nqn': response['nqn'],
-                           'address': response['addr'],
-                           'port': response['port'],
-                           'units': units})
+        try:
+            units = int(units)
+        except ValueError:
+            pass
+
+        result = {}
+        for key, val in response.items():
+            if (key == 'nqn' or key.startswith('addr') or
+                    key.startswith('port')):
+                result[key] = val
+
+        result['units'] = units
+        event.set_results(result)
 
     def _handle_ha_create(self, response, peers, msg, sock, event):
         valid = [{'addr': self.egress_addr(), 'port': response['port'],

@@ -126,7 +126,7 @@ class TestCharm(unittest.TestCase):
 
         charm.on_create_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'address': '3.3.3.3',
+            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
              'port': 1, 'units': 2})
 
         # We expect the following calls:
@@ -149,7 +149,7 @@ class TestCharm(unittest.TestCase):
 
         charm.on_create_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'address': '3.3.3.3',
+            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
              'port': 1, 'units': 1})
 
         # We expect no remote calls for this test.
@@ -186,7 +186,7 @@ class TestCharm(unittest.TestCase):
 
         charm.on_join_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'address': '3.3.3.3',
+            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
              'port': 1, 'units': 1})
 
         # We expect the following calls:

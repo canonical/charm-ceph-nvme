@@ -323,8 +323,24 @@ class Proxy:
         subsystems = self.get_spdk_subsystems()
         nqn = msg['nqn']
         sub = subsystems[nqn]
-        lst = sub['listen_addresses'][0]
-        return {'addr': lst['traddr'], 'nqn': nqn, 'port': lst['trsvcid']}
+
+        def process_addr(addr):
+            trtype = addr['trtype']
+            suffix = ''
+
+            if trtype.lower() == 'rdma':
+                suffix = '-rdma'
+            elif addr['adrfam'].lower() == 'ipv6':
+                suffix = '-v6'
+
+            return {'addr' + suffix: addr['traddr'],
+                    'port' + suffix: addr['trsvcid']}
+
+        ret = {'nqn': nqn}
+        for addr in sub['listen_addresses']:
+            ret.update(process_addr(addr))
+
+        return ret
 
     def _expand_remove(self, msg):
         nqn = msg['nqn']
