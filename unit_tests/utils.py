@@ -35,9 +35,6 @@ class MockSPDK:
     def _list_rmidx(lst, ix):
         return lst[:ix] + lst[ix + 1:]
 
-    def _find_subsys(self, nqn):
-        return self.subsystems.get(nqn, b'{"error":"subsystem not found"}')
-
     @staticmethod
     def dict_eq(x, y, keys):
         for k in keys:

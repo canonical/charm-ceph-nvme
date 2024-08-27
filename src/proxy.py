@@ -145,7 +145,19 @@ class Proxy:
             'host_list': RPCHandler(self._expand_default, self._post_host_list)
         }
 
-        for cmd in self._prepare_file():
+        cmds = iter(self._prepare_file())
+        try:
+            self._prepare_cmd(next(cmds))
+        except Exception:
+            # The first command is always 'nvmf_create_transport'
+            # Since we're using TCP and support for it is always
+            # built in, this can only fail in case the command has
+            # already been applied, which can happen if the proxy
+            # dies, but not SPDK. As such, assume that SPDK is
+            # healthy and needs no further configuring.
+            return
+
+        for cmd in cmds:
             self._process_cmd(cmd)
 
     def get_spdk_subsystems(self):
