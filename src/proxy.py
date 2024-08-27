@@ -45,8 +45,9 @@ class ProxyError(Exception):
 
 
 class ProxyCommand:
-    def __init__(self, msg):
+    def __init__(self, msg, fatal=False):
         self.msg = msg
+        self.fatal = fatal
 
     def __call__(self, proxy):
         return proxy.msgloop(self.msg)
@@ -147,8 +148,8 @@ class Proxy:
 
         cmds = iter(self._prepare_file())
         try:
-            self._prepare_cmd(next(cmds))
-        except Exception:
+            self._process_cmd(next(cmds))
+        except ProxyError:
             # The first command is always 'nvmf_create_transport'
             # Since we're using TCP and support for it is always
             # built in, this can only fail in case the command has
@@ -158,7 +159,13 @@ class Proxy:
             return
 
         for cmd in cmds:
-            self._process_cmd(cmd)
+            try:
+                self._process_cmd(cmd)
+            except Exception:
+                # Check if the failure is fatal.
+                if not getattr(cmd, 'fatal', True):
+                    continue
+                raise
 
     def get_spdk_subsystems(self):
         """Return a dictionary describing the subsystems for the gateway."""
@@ -392,7 +399,7 @@ class Proxy:
                 address=dict(
                     traddr=subsys['addr'], trsvcid=str(subsys['port']),
                     trtype='tcp'))
-            yield ProxyCommand(payload)
+            yield ProxyCommand(payload, fatal=False)
 
     def _expand_host_add(self, msg):
         host = msg['host']
