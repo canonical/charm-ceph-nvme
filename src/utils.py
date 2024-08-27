@@ -99,15 +99,18 @@ def create_dir(path):
     subprocess.check_call(['sudo', 'mkdir', '-p', path])
 
 
+def get_adrfam(addr):
+    try:
+        socket.inet_pton(socket.AF_INET, addr)
+        return socket.AF_INET, 'IPv4'
+    except OSError:
+        socket.inet_pton(socket.AF_INET6, addr)
+        return socket.AF_INET6, 'IPv6'
+
+
 def get_free_port(address='127.0.0.1'):
     """Get a free port and the family for an IP address."""
-    family, fstr = socket.AF_INET, 'IPv4'
-    try:
-        socket.inet_pton(socket.AF_INET6, address)
-        family, fstr = socket.AF_INET6, 'IPv6'
-    except OSError:
-        pass
-
+    family, fstr = get_adrfam(address)
     s = socket.socket(family, socket.SOCK_DGRAM)
     s.bind((address, 0))
     _, *extra = s.getsockname()

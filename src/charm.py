@@ -67,6 +67,7 @@ class CephNVMECharm(ops.CharmBase):
         obs = self.framework.observe
         obs(self.on.start, self._on_start)
         obs(self.on.install, self._on_install)
+        obs(self.on.peers_relation_departed, self.on_peers_relation_departed)
         obs(self.on.create_endpoint_action, self.on_create_endpoint_action)
         obs(self.on.delete_endpoint_action, self.on_delete_endpoint_action)
         obs(self.on.join_endpoint_action, self.on_join_endpoint_action)
@@ -80,6 +81,18 @@ class CephNVMECharm(ops.CharmBase):
         obs(self.client.on.broker_available, self._on_ceph_relation_joined)
         obs(self.client.on.pools_available, self._on_ceph_relation_changed)
         obs(self.admin_access.on.admin_access_request, self.on_admin_access)
+
+    def on_peers_relation_departed(self, event):
+        peers = self._peer_addrs()
+        if not peers:
+            return
+
+        elems = self._msgloop({'method': 'list'})
+        msg = self.rpc.leave(subsystems=elems)
+        sock = self._rpc_sock()
+
+        for addr in peers:
+            self._msgloop(msg, addr=addr, sock=sock)
 
     def on_admin_access(self, event):
         passwd = self.config.get('dashboard-password')
@@ -103,14 +116,16 @@ class CephNVMECharm(ops.CharmBase):
         except Exception:
             return '0.0.0.0'
 
-    def egress_addr(self):
-        """Get the charm's egress address."""
-        try:
-            net = self.model.get_binding('peers').network.egress_subnets
-            elem = next(iter(net))
-            return str(list(elem.hosts())[0])
-        except Exception:
-            return '0.0.0.0'
+    def _select_addr(self, adrfam):
+        nets = self.model.get_binding('peers').network.egress_subnets
+        if adrfam == 'any':
+            elem = next(iter(nets))
+            return str(random.choice(list(elem.hosts())))
+
+        version = int(adrfam.lower().replace('ip', ''))
+        for network in nets:
+            if network.version == version:
+                return str(random.choice(network.hosts()))
 
     def _rpc_sock(self):
         """Create a socket to communicate with the proxy."""
@@ -226,22 +241,13 @@ class CephNVMECharm(ops.CharmBase):
 
     @staticmethod
     def _event_set_create_results(event, response, units):
-        try:
-            units = int(units)
-        except ValueError:
-            pass
-
-        result = {}
-        for key, val in response.items():
-            if (key == 'nqn' or key.startswith('addr') or
-                    key.startswith('port')):
-                result[key] = val
-
-        result['units'] = units
-        event.set_results(result)
+        event.set_results({'nqn': response['nqn'],
+                           'address': response['addr'],
+                           'port': response['port'],
+                           'units': units})
 
     def _handle_ha_create(self, response, peers, msg, sock, event):
-        valid = [{'addr': self.egress_addr(), 'port': response['port'],
+        valid = [{'addr': response['addr'], 'port': response['port'],
                   'rpc_addr': '127.0.0.1'}]
 
         # Tell the other peers to create the bdev, subsystem and namespace.
@@ -277,8 +283,13 @@ class CephNVMECharm(ops.CharmBase):
         image = event.params.get('rbd-image')
         cluster = 'ceph.%s' % next(iter(relations)).id
         units = event.params.get('units') or "1"
+        addr = self._select_addr(event.params.get('adrfam', 'any'))
+        if addr is None:
+            event.fail('Could not find an address of the requested type')
+            return
 
-        msg = self.rpc.create(pool_name=pool, rbd_name=image, cluster=cluster)
+        msg = self.rpc.create(pool_name=pool, rbd_name=image,
+                              cluster=cluster, addr=addr)
         sock = self._rpc_sock()
         res = self._msgloop(msg, sock=sock)
         if 'error' in res:
@@ -339,9 +350,15 @@ class CephNVMECharm(ops.CharmBase):
 
             if bdev_spec is None:
                 # Create the endpoint if we haven't already.
+                addr = self._select_addr(event.params.get('adrfam', 'any'))
+                if addr is None:
+                    event.fail('Could not find an address of requested type')
+                    return 0, ""
+
                 create_msg = self.rpc.create(nqn=nqn, pool_name=resp['pool'],
                                              rbd_name=resp['image'],
-                                             cluster=resp['cluster'])
+                                             cluster=resp['cluster'],
+                                             addr=addr)
                 rv = self._msgloop(create_msg, addr='127.0.0.1', sock=sock)
                 if 'error' in rv:
                     event.fail('failed to create endpoint: %s' %

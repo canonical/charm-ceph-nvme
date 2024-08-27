@@ -126,7 +126,7 @@ class TestCharm(unittest.TestCase):
 
         charm.on_create_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
+            {'nqn': 'nqn.1', 'address': '3.3.3.3',
              'port': 1, 'units': 2})
 
         # We expect the following calls:
@@ -149,7 +149,7 @@ class TestCharm(unittest.TestCase):
 
         charm.on_create_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
+            {'nqn': 'nqn.1', 'address': '3.3.3.3',
              'port': 1, 'units': 1})
 
         # We expect no remote calls for this test.
@@ -180,13 +180,15 @@ class TestCharm(unittest.TestCase):
         event.fail.assert_called()
 
     @mock.patch.object(charm.subprocess, 'check_output')
-    def test_join(self, check_output):
+    @mock.patch.object(charm.subprocess, 'run')
+    def test_join(self, run, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
+        charm._select_addr = lambda *_: '1.1.1.1'
         event.params = {'nqn': 'nqn.1'}
 
         charm.on_join_endpoint_action(event)
         event.set_results.assert_called_with(
-            {'nqn': 'nqn.1', 'addr': '3.3.3.3',
+            {'nqn': 'nqn.1', 'address': '3.3.3.3',
              'port': 1, 'units': 1})
 
         # We expect the following calls:
@@ -289,3 +291,14 @@ class TestCharm(unittest.TestCase):
                 self.assertEqual(file.read(), contents)
             finally:
                 charm.PROXY_CMDS_FILE = prev
+
+    @mock.patch.object(charm.subprocess, 'check_output')
+    def test_relation_departed(self, check_output):
+        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        charm.on_peers_relation_departed(event)
+
+        # We expect the following calls:
+        # local-list
+        # remote-leave
+        expected = [('list', True), ('leave', False)]
+        self._check_calls(rpc_sock.sendto.call_args_list, expected)

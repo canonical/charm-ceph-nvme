@@ -11,13 +11,13 @@ parts:
                      uuid-dev, libiscsi-dev, pkgconf, meson, python3-grpcio,
                      python3-jinja2, python3-pyelftools, libncurses-dev, git]
     override-build: |
-      git clone https://github.com/spdk/spdk.git
+      git clone -b v24.05 https://github.com/spdk/spdk.git
       git -C spdk submodule update --init
       ./spdk/configure --with-rbd --disable-tests --disable-unit-tests \
                        --disable-debug --disable-examples --without-golang \
                        --without-shared --without-iscsi-initiator \
-                       --disable-cet --without-daos
-      make -C spdk
+                       --disable-cet --without-daos --target-arch=x86-64-v2
+      make -C spdk -j `(nproc --ignore=4)`
       find ./spdk/build/bin ! -name 'nvmf_tgt' -type f -exec rm -f {} +
       find ./spdk -name '*.o' -type f -delete
       find ./spdk -name '*.d' -type f -delete
@@ -28,8 +28,8 @@ parts:
     prime:
       - spdk
 
-base: ubuntu@22.04
+base: ubuntu@24.04
 platforms:
   amd64:
-    build-on: [amd64]
-    build-for: [amd64]
+    build-on: amd64
+    build-for: amd64

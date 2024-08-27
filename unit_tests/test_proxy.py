@@ -88,7 +88,7 @@ class TestProxy(unittest.TestCase):
 
         msg = self.rpc.create(
             nqn='nqn.1', cluster='ceph', pool_name='mypool',
-            rbd_name='myimage')
+            rbd_name='myimage', addr='0.0.0.0')
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
         prev = rv
@@ -102,7 +102,8 @@ class TestProxy(unittest.TestCase):
         self.assertIn('port', rv)
 
         msg = self.rpc.join(
-            nqn='nqn.1', addresses=[{'addr': '127.0.0.1', 'port': 65001}])
+            nqn='nqn.1', addresses=[{'addr': '127.0.0.1', 'port': 65001}],
+            addr='127.0.0.1')
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
@@ -126,7 +127,8 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
-        msg = self.rpc.leave(nqn='nqn.1', addr='127.0.0.1', port=65001)
+        msg = self.rpc.leave(subsystems=
+            [dict(nqn='nqn.1', addr='127.0.0.1', port=65001)])
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 

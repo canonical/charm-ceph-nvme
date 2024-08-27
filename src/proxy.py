@@ -91,16 +91,10 @@ class ProxyCreateEndpoint:
             self._check_reply(payload, proxy)
             cleanup.append(rpc.nvmf_delete_subsystem(nqn=nqn))
 
-            # Add ipv4 and ipv6 listeners.
             self._add_listener(
                 proxy, cleanup,
                 nqn=nqn,
-                listen_address=dict(trtype='tcp', traddr='0.0.0.0'))
-
-            self._add_listener(
-                proxy, cleanup,
-                nqn=nqn,
-                listen_address=dict(trtype='tcp', traddr='::'))
+                listen_address=dict(trtype='tcp', traddr=self.msg['addr']))
 
             payload = rpc.nvmf_subsystem_add_ns(
                 nqn=nqn,
@@ -323,24 +317,8 @@ class Proxy:
         subsystems = self.get_spdk_subsystems()
         nqn = msg['nqn']
         sub = subsystems[nqn]
-
-        def process_addr(addr):
-            trtype = addr['trtype']
-            suffix = ''
-
-            if trtype.lower() == 'rdma':
-                suffix = '-rdma'
-            elif addr['adrfam'].lower() == 'ipv6':
-                suffix = '-v6'
-
-            return {'addr' + suffix: addr['traddr'],
-                    'port' + suffix: addr['trsvcid']}
-
-        ret = {'nqn': nqn}
-        for addr in sub['listen_addresses']:
-            ret.update(process_addr(addr))
-
-        return ret
+        trid = sub['listen_addresses'][0]
+        return {'nqn': nqn, 'addr': trid['traddr'], 'port': trid['trsvcid']}
 
     def _expand_remove(self, msg):
         nqn = msg['nqn']
@@ -392,11 +370,17 @@ class Proxy:
         return subsys.get('hosts', [])
 
     def _expand_leave(self, msg):
-        payload = self.rpc.nvmf_discovery_remove_referral(
-            subnqn=msg['nqn'],
-            address=dict(
-                traddr=msg['addr'], trsvcid=str(msg['port']), trtype='tcp'))
-        yield ProxyCommand(payload)
+        elems = msg.get('subsystems')
+        if elems is None:
+            elems = [msg]
+
+        for subsys in elems:
+            payload = self.rpc.nvmf_discovery_remove_referral(
+                subnqn=subsys['nqn'],
+                address=dict(
+                    traddr=subsys['addr'], trsvcid=str(subsys['port']),
+                    trtype='tcp'))
+            yield ProxyCommand(payload)
 
     def _expand_host_add(self, msg):
         host = msg['host']
