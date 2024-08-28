@@ -314,6 +314,8 @@ class Proxy:
     def _subsystem_to_dict(subsys):
         elem = subsys['listen_addresses'][0]
         return {'addr': elem['traddr'], 'port': elem['trsvcid'],
+                'hosts': subsys['hosts'],
+                'allow_any_host': subsys['allow_any_host'],
                 **Proxy._parse_bdev_name(subsys['namespaces'][0]['name'])}
 
     def _expand_default(self, _):

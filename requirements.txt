@@ -1,5 +1,6 @@
 ops ~= 2.5
 netifaces
 netaddr
+ipaddress
 git+https://opendev.org/openstack/charm-ops-interface-ceph-client#egg=interface_ceph_client
 git+https://github.com/openstack-charmers/ops-interface-ceph-iscsi-admin-access#egg=interface_ceph_iscsi_admin_access

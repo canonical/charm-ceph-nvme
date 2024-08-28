@@ -16,6 +16,7 @@
 
 """Charm the application."""
 
+import ipaddress
 import json
 import logging
 import os
@@ -87,11 +88,10 @@ class CephNVMECharm(ops.CharmBase):
         if not peers:
             return
 
-        elems = self._msgloop({'method': 'list'})
-        msg = self.rpc.leave(subsystems=elems)
+        msg = self.rpc.leave(subsystems=self._msgloop({'method': 'list'}))
         sock = self._rpc_sock()
 
-        for addr in peers:
+        for addr, _ in peers:
             self._msgloop(msg, addr=addr, sock=sock)
 
     def on_admin_access(self, event):
@@ -116,16 +116,27 @@ class CephNVMECharm(ops.CharmBase):
         except Exception:
             return '0.0.0.0'
 
+    @staticmethod
+    def _get_egress_networks(srepr):
+        return [ipaddress.ip_network(x) for x in srepr.split(',')]
+
+    @staticmethod
+    def _select_addr_from_list(networks, adrfam, fallback=False):
+        adrfam = adrfam.lower()
+        if adrfam.startswith('ipv'):
+            version = int(adrfam.replace('ipv', ''))
+            for network in networks:
+                if network.version == version:
+                    return str(random.choice(network.hosts()))
+
+        if adrfam == 'any' or fallback:
+            # pick any address from any network available.
+            network = random.choice(networks)
+            return str(random.choice(list(network.hosts())))
+
     def _select_addr(self, adrfam):
         nets = self.model.get_binding('peers').network.egress_subnets
-        if adrfam == 'any':
-            elem = next(iter(nets))
-            return str(random.choice(list(elem.hosts())))
-
-        version = int(adrfam.lower().replace('ip', ''))
-        for network in nets:
-            if network.version == version:
-                return str(random.choice(network.hosts()))
+        return self._select_addr_from_list(nets, adrfam)
 
     def _rpc_sock(self):
         """Create a socket to communicate with the proxy."""
@@ -182,10 +193,10 @@ class CephNVMECharm(ops.CharmBase):
     @staticmethod
     def _get_unit_addr(unit, rel_id):
         try:
-            cmd = ['relation-get', '--format=json', '-r', str(rel_id),
-                   'private-address', unit]
-            out = subprocess.check_output(cmd)
-            return out.decode('utf8').replace('"', '').strip()
+            cmd = ['relation-get', '--format=json', '-r',
+                   str(rel_id), '-', unit]
+            out = json.loads(subprocess.check_output(cmd))
+            return out['private-address'], out['egress-subnets']
         except subprocess.CalledProcessError:
             logger.exception('failed to get private address: ')
             return None
@@ -199,10 +210,12 @@ class CephNVMECharm(ops.CharmBase):
     def _peer_addrs(self):
         peers = self._get_peers()
         ret = []
-        for peer in peers.units:
-            addr = self._get_unit_addr(peer.name, peers.id)
-            if addr is not None:
-                ret.append(addr)
+
+        if peers:
+            for peer in peers.units:
+                addr = self._get_unit_addr(peer.name, peers.id)
+                if addr is not None:
+                    ret.append(addr)
 
         return ret
 
@@ -249,9 +262,14 @@ class CephNVMECharm(ops.CharmBase):
     def _handle_ha_create(self, response, peers, msg, sock, event):
         valid = [{'addr': response['addr'], 'port': response['port'],
                   'rpc_addr': '127.0.0.1'}]
+        adrfam = event.params.get('adrfam', 'any')
 
         # Tell the other peers to create the bdev, subsystem and namespace.
-        for peer, addr in peers:
+        for peer, (addr, networks) in peers:
+            egress = self._get_egress_networks(networks)
+            xaddr = self._select_addr_from_list(egress, adrfam, True)
+            msg['params']['addr'] = xaddr
+
             peer_resp = self._msgloop(msg, addr=addr, sock=sock)
             if 'error' not in peer_resp:
                 valid.append({'addr': peer_resp['addr'], 'rpc_addr': addr,
@@ -316,7 +334,7 @@ class CephNVMECharm(ops.CharmBase):
             return False
 
         msg = self.rpc.leave(addr=elem['addr'], port=elem['port'], nqn=nqn)
-        for addr in self._peer_addrs():
+        for addr, _ in self._peer_addrs():
             # We don't care about the response here.
             self._msgloop(msg, addr=addr, sock=sock)
 
@@ -337,12 +355,40 @@ class CephNVMECharm(ops.CharmBase):
 
         event.set_results({'message': 'success'})
 
+    def _create_bdev_on_join(self, nqn, resp, sock, event):
+        laddr = self._select_addr(event.params.get('adrfam', 'any'))
+        if laddr is None:
+            raise KeyError('could not find an address of requested type')
+
+        # The response contains the necessary parameters to create the bdev.
+        create_msg = self.rpc.create(nqn=nqn, pool_name=resp['pool'],
+                                     rbd_name=resp['image'],
+                                     cluster=resp['cluster'], addr=laddr)
+        rv = self._msgloop(create_msg, addr='127.0.0.1', sock=sock)
+        if 'error' in rv:
+            raise RuntimeError('failed to create endpoint: %s' %
+                               str(rv['error']))
+        # With the endpoint created, add the hosts, if any.
+        if resp.get('allow_any_host'):
+            # This call cannot fail.
+            self._msgloop(self.rpc.host_add(nqn=nqn, host='*'))
+        else:
+            for elem in resp.get('hosts', ()):
+                elem['key'] = elem.get('dhchap_key')
+                tmp = self._msgloop(self.rpc.host_add(nqn=nqn, host=elem))
+                if 'error' in tmp:
+                    self._msgloop(self.rpc.remove(nqn=nqn), sock=sock)
+                    raise RuntimeError('failed to create endpoint: %s' %
+                                       str(tmp['error']))
+
+        return rv
+
     def _handle_join_peers(self, msg, nqn, peers, num_max, event):
         sock = self._rpc_sock()
         bdev_spec = None
         joined = 0
 
-        for addr in peers:
+        for addr, _ in peers:
             resp = self._msgloop(msg, addr=addr, sock=sock)
             if not resp:
                 # Empty response means this peer doesn't handle the NQN.
@@ -350,22 +396,12 @@ class CephNVMECharm(ops.CharmBase):
 
             if bdev_spec is None:
                 # Create the endpoint if we haven't already.
-                addr = self._select_addr(event.params.get('adrfam', 'any'))
-                if addr is None:
-                    event.fail('Could not find an address of requested type')
+                try:
+                    bdev_spec = self._create_bdev_on_join(nqn, resp,
+                                                          sock, event)
+                except Exception as exc:
+                    event.fail(str(exc))
                     return 0, ""
-
-                create_msg = self.rpc.create(nqn=nqn, pool_name=resp['pool'],
-                                             rbd_name=resp['image'],
-                                             cluster=resp['cluster'],
-                                             addr=addr)
-                rv = self._msgloop(create_msg, addr='127.0.0.1', sock=sock)
-                if 'error' in rv:
-                    event.fail('failed to create endpoint: %s' %
-                               str(rv['error']))
-                    return 0, ""
-
-                bdev_spec = rv
 
             # Tell our peer to join us.
             alist = [{'addr': bdev_spec['addr'], 'port': bdev_spec['port']}]
@@ -428,7 +464,7 @@ class CephNVMECharm(ops.CharmBase):
             event.fail('NQN %s not found' % nqn)
             return
 
-        for addr in self._peer_addrs():
+        for addr, _ in self._peer_addrs():
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
@@ -444,7 +480,7 @@ class CephNVMECharm(ops.CharmBase):
             event.fail('Host %s or NQN %s not found' % (host, nqn))
             return
 
-        for addr in self._peer_addrs():
+        for addr, _ in self._peer_addrs():
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
