@@ -50,8 +50,12 @@ class TestProxy(unittest.TestCase):
                     break
 
         def _mp_proxy(out):
-            file = tempfile.NamedTemporaryFile(mode='w+')
-            p = proxy.Proxy(LOCAL_PORT, file.name, LOCAL_SOCK)
+            wdir = tempfile.TemporaryDirectory()
+            wname = wdir.name
+            if not wname.endswith('/'):
+                wname += '/'
+
+            p = proxy.Proxy(LOCAL_PORT, wname, LOCAL_SOCK)
             out.append(1)
             p.serve()
 
@@ -107,7 +111,8 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
-        msg = self.rpc.host_add(host='host', nqn=prev['nqn'], key='some-key')
+        msg = self.rpc.host_add(host='host', nqn=prev['nqn'],
+                                dhchap_key='some-key')
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
@@ -127,8 +132,8 @@ class TestProxy(unittest.TestCase):
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 
-        msg = self.rpc.leave(subsystems=
-            [dict(nqn='nqn.1', addr='127.0.0.1', port=65001)])
+        msg = self.rpc.leave(subsystems=[
+            dict(nqn='nqn.1', addr='127.0.0.1', port=65001)])
         rv = self.msgloop(msg)
         self.assertNotIn('error', rv)
 

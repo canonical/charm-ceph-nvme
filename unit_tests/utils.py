@@ -30,6 +30,7 @@ class MockSPDK:
         self.bdevs = {}
         self.clusters = set()
         self.nvmf_subsys = {}
+        self.keys = {}
 
     @staticmethod
     def _list_rmidx(lst, ix):
@@ -142,6 +143,12 @@ class MockSPDK:
         if name in self.clusters:
             raise ValueError('cluster already registered')
         self.clusters.add(name)
+
+    def keyring_file_add_key(self, **kwargs):
+        self.keys[kwargs['name']] = kwargs['path']
+
+    def keyring_file_remove_key(self, **kwargs):
+        del self.keys[kwargs['name']]
 
     def loop(self, timeout=None):
         rd, _, _ = select.select([self.sock], [], [], timeout)

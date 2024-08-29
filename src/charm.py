@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 SPDK_TGT_FILE = '/lib/systemd/system/nvmf_tgt.service'
 PROXY_FILE = '/lib/systemd/system/nvmf_proxy.service'
-PROXY_CMDS_FILE = '/var/lib/nvme-of/cmds'
+PROXY_WORKING_DIR = '/var/lib/nvme-of/'
+PROXY_CMDS_FILE = PROXY_WORKING_DIR + 'cmds'
 
 SYSTEMD_TEMPLATE = """
 [Unit]
@@ -374,8 +375,8 @@ class CephNVMECharm(ops.CharmBase):
             self._msgloop(self.rpc.host_add(nqn=nqn, host='*'))
         else:
             for elem in resp.get('hosts', ()):
-                elem['key'] = elem.get('dhchap_key')
-                tmp = self._msgloop(self.rpc.host_add(nqn=nqn, host=elem))
+                tmp = self._msgloop(self.rpc.host_add(
+                    nqn=nqn, dhchap_key=elem.get('dhchap_key')))
                 if 'error' in tmp:
                     self._msgloop(self.rpc.remove(nqn=nqn), sock=sock)
                     raise RuntimeError('failed to create endpoint: %s' %
@@ -539,7 +540,7 @@ class CephNVMECharm(ops.CharmBase):
                                  args=' '.join([nvmf_path, '-m', cpumask]))
 
         proxy_path = os.path.realpath(charm_dir + '/src/proxy.py')
-        args = ' '.join([str(self.config['proxy-port']), PROXY_CMDS_FILE])
+        args = ' '.join([str(self.config['proxy-port']), PROXY_WORKING_DIR])
 
         utils.create_systemd_svc(PROXY_FILE, SYSTEMD_TEMPLATE,
                                  description='proxy server for target',

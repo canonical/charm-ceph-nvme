@@ -108,43 +108,61 @@ class ProxyCreateEndpoint:
 
 
 class ProxyAddHost:
-    def __init__(self, msg, key):
+    def __init__(self, msg, dhchap_key):
         self.msg = msg
-        self.key = key
+        self.dhchap_key = dhchap_key
+
+    @staticmethod
+    def _restore_key(path, contents):
+        if contents:
+            with open(path, 'w') as file:
+                file.write(contents)
 
     def __call__(self, proxy):
-        if not self.key:
+        if not self.dhchap_key:
             return proxy.msgloop(self.msg)
 
-        with tempfile.NamedTemporaryFile(mode='w+') as file:
-            file.write(self.key)
-            file.flush()
-            msg = self.msg.copy()
-            msg['params']['psk'] = file.name
-            return proxy.msgloop(msg)
+        params = self.msg['params']
+        fname = proxy.key_file_name(params['nqn'], params['host'])
+        path = proxy.wdir + fname
+
+        try:
+            f = open(path, 'r')
+            contents = f.read()
+            f.close()
+        except Exception:
+            contents = None
+
+        if self.dhchap_key != contents:
+            with open(path, 'w') as file:
+                file.write(self.dhchap_key)
+
+        payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
+        rv = proxy.msgloop(payload)
+        if proxy.is_error(rv):
+            self._restore_key(path, contents)
+            raise KeyError(rv['error'])
+
+        payload = self.msg.copy()
+        payload['params']['dhchap_key'] = fname
+        rv = proxy.msgloop(payload)
+
+        if proxy.is_error(rv):
+            self._restore_key(path, contents)
+
+        return rv
 
 
 class Proxy:
-    def __init__(self, port, cmd_file, rpc_path):
+    def __init__(self, port, wdir, rpc_path):
         self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.rpc_sock.connect(rpc_path)
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.receiver.bind(('0.0.0.0', port))
-        self.cmd_file = open(cmd_file, 'a+b')
+        self.wdir = wdir
+        self.cmd_file = open(self.wdir + 'cmds', 'a+b')
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
-        self.handlers = {
-            'create': RPCHandler(self._expand_create, self._post_create),
-            'remove': RPCHandler(self._expand_remove, None),
-            'cluster_add': RPCHandler(self._expand_cluster_add, None),
-            'join': RPCHandler(self._expand_join, None),
-            'find': RPCHandler(self._expand_default, self._post_find),
-            'leave': RPCHandler(self._expand_leave, None),
-            'list': RPCHandler(self._expand_default, self._post_list),
-            'host_add': RPCHandler(self._expand_host_add, None),
-            'host_del': RPCHandler(self._expand_host_del, None),
-            'host_list': RPCHandler(self._expand_default, self._post_host_list)
-        }
 
         cmds = iter(self._prepare_file())
         try:
@@ -232,6 +250,15 @@ class Proxy:
         except Exception:
             return None
 
+    def _get_method_handlers(self, method):
+        expand = getattr(self, '_expand_' + method, None)
+        post = getattr(self, '_post_' + method, None)
+
+        if expand is None and post is not None:
+            expand = lambda *_: ()
+
+        return expand, post
+
     def handle_request(self, msg, addr):
         """Handle a request from a particular client."""
         obj = json.loads(msg)
@@ -240,7 +267,7 @@ class Proxy:
             logger.debug('stopping proxy as requested')
             return True
 
-        handler = self.handlers.get(method)
+        handler, post = self._get_method_handlers(method)
         if handler is None:
             logger.error('invalid method: %s', method)
             self.receiver.sendto(('{"error": "invalid method: %s"}' %
@@ -249,7 +276,7 @@ class Proxy:
 
         logger.info('processing request: %s', obj)
         obj = obj.get('params')
-        cmds = list(handler.expand(obj))
+        cmds = list(handler(obj))
         for cmd in cmds:
             self._process_cmd(cmd)
 
@@ -258,8 +285,8 @@ class Proxy:
             self._write_cmd(cmd)
 
         resp = {}
-        if handler.post is not None:
-            resp = handler.post(obj)
+        if post is not None:
+            resp = post(obj)
         self.receiver.sendto(_json_dumps(resp).encode('utf8'), addr)
 
     @staticmethod
@@ -297,6 +324,12 @@ class Proxy:
         return ret
 
     @staticmethod
+    def key_file_name(nqn, host):
+        # Create a unique file path for a key.
+        nqn = nqn.replace(NQN_BASE, '')
+        return nqn + '@' + host
+
+    @staticmethod
     def ns_dict(bdev_name, nqn):
         # In order for namespaces to be equal, the following must match:
         # namespace ID (always set to 1)
@@ -317,9 +350,6 @@ class Proxy:
                 'hosts': subsys['hosts'],
                 'allow_any_host': subsys['allow_any_host'],
                 **Proxy._parse_bdev_name(subsys['namespaces'][0]['name'])}
-
-    def _expand_default(self, _):
-        return []
 
     def _expand_create(self, msg):
         cluster = msg['cluster']
@@ -412,23 +442,29 @@ class Proxy:
         else:
             payload = self.rpc.nvmf_subsystem_add_host(
                 nqn=msg['nqn'], host=host)
-            yield ProxyAddHost(payload, msg.get('key'))
+            yield ProxyAddHost(payload, msg.get('dhchap_key'))
 
     def _expand_host_del(self, msg):
-        payload = self.rpc.nvmf_subsystem_remove_host(
-            nqn=msg['nqn'], host=msg['host'])
+        nqn = msg['nqn']
+        host = msg['host']
+
+        payload = self.rpc.nvmf_subsystem_remove_host(nqn=nqn, host=host)
         yield ProxyCommand(payload)
+
+        payload = self.rpc.keyring_file_remove_key(
+            name=self.key_file_name(nqn, host))
+        yield ProxyCommand(payload, fatal=False)
 
 
 def main():
     parser = argparse.ArgumentParser(description='proxy server for SPDK')
     parser.add_argument('port', help='proxy server port', type=int)
-    parser.add_argument('cmdfile', help='path to file to save commands',
-                        type=str, default='/var/lib/nvme-of/cmds.json')
+    parser.add_argument('wdir', help='working directory for the proxy',
+                        type=str, default='/var/lib/nvme-of/')
     parser.add_argument('-s', dest='sock', help='local socket for RPC',
                         type=str, default='/var/tmp/spdk.sock')
     args = parser.parse_args()
-    proxy = Proxy(args.port, args.cmdfile, args.sock)
+    proxy = Proxy(args.port, args.wdir, args.sock)
     proxy.serve()
 
 
