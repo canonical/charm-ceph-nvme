@@ -92,7 +92,7 @@ class CephNVMECharm(ops.CharmBase):
         msg = self.rpc.leave(subsystems=self._msgloop({'method': 'list'}))
         sock = self._rpc_sock()
 
-        for addr, _ in peers:
+        for addr, *_ in peers:
             self._msgloop(msg, addr=addr, sock=sock)
 
     def on_admin_access(self, event):
@@ -120,24 +120,6 @@ class CephNVMECharm(ops.CharmBase):
     @staticmethod
     def _get_egress_networks(srepr):
         return [ipaddress.ip_network(x) for x in srepr.split(',')]
-
-    @staticmethod
-    def _select_addr_from_list(networks, adrfam, fallback=False):
-        adrfam = adrfam.lower()
-        if adrfam.startswith('ipv'):
-            version = int(adrfam.replace('ipv', ''))
-            for network in networks:
-                if network.version == version:
-                    return str(random.choice(network.hosts()))
-
-        if adrfam == 'any' or fallback:
-            # pick any address from any network available.
-            network = random.choice(networks)
-            return str(random.choice(list(network.hosts())))
-
-    def _select_addr(self, adrfam):
-        nets = self.model.get_binding('peers').network.egress_subnets
-        return self._select_addr_from_list(nets, adrfam)
 
     def _rpc_sock(self):
         """Create a socket to communicate with the proxy."""
@@ -197,7 +179,8 @@ class CephNVMECharm(ops.CharmBase):
             cmd = ['relation-get', '--format=json', '-r',
                    str(rel_id), '-', unit]
             out = json.loads(subprocess.check_output(cmd))
-            return out['private-address'], out['egress-subnets']
+            return (out['private-address'], out['egress-subnets'],
+                    out['ingress-address'])
         except subprocess.CalledProcessError:
             logger.exception('failed to get private address: ')
             return None
@@ -266,11 +249,8 @@ class CephNVMECharm(ops.CharmBase):
         adrfam = event.params.get('adrfam', 'any')
 
         # Tell the other peers to create the bdev, subsystem and namespace.
-        for peer, (addr, networks) in peers:
-            egress = self._get_egress_networks(networks)
-            xaddr = self._select_addr_from_list(egress, adrfam, True)
+        for peer, (addr, _, xaddr) in peers:
             msg['params']['addr'] = xaddr
-
             peer_resp = self._msgloop(msg, addr=addr, sock=sock)
             if 'error' not in peer_resp:
                 valid.append({'addr': peer_resp['addr'], 'rpc_addr': addr,
@@ -291,6 +271,16 @@ class CephNVMECharm(ops.CharmBase):
             logger.warning('failed to create additional endpoints for HA')
         self._event_set_create_results(event, response, added)
 
+    def _select_addr(self, subnet=None):
+        if subnet is None:
+            return self.bind_addr()
+
+        try:
+            network = ipaddress.ip_network(subnet)
+            return str(random.choice(list(network.hosts())))
+        except Exception:
+            return None
+
     def on_create_endpoint_action(self, event):
         """Handle endpoint creation."""
         relations = self.model.relations.get(self.client.relation_name)
@@ -302,9 +292,9 @@ class CephNVMECharm(ops.CharmBase):
         image = event.params.get('rbd-image')
         cluster = 'ceph.%s' % next(iter(relations)).id
         units = event.params.get('units') or "1"
-        addr = self._select_addr(event.params.get('adrfam', 'any'))
+        addr = self._select_addr(event.params.get('subnet'))
         if addr is None:
-            event.fail('Could not find an address of the requested type')
+            event.fail('could not pick a host from subnet')
             return
 
         msg = self.rpc.create(pool_name=pool, rbd_name=image,
@@ -335,7 +325,7 @@ class CephNVMECharm(ops.CharmBase):
             return False
 
         msg = self.rpc.leave(addr=elem['addr'], port=elem['port'], nqn=nqn)
-        for addr, _ in self._peer_addrs():
+        for addr, *_ in self._peer_addrs():
             # We don't care about the response here.
             self._msgloop(msg, addr=addr, sock=sock)
 
@@ -357,9 +347,9 @@ class CephNVMECharm(ops.CharmBase):
         event.set_results({'message': 'success'})
 
     def _create_bdev_on_join(self, nqn, resp, sock, event):
-        laddr = self._select_addr(event.params.get('adrfam', 'any'))
+        laddr = self._select_addr(event.params.get('subnet'))
         if laddr is None:
-            raise KeyError('could not find an address of requested type')
+            raise RuntimeError('could not pick a host from subnet')
 
         # The response contains the necessary parameters to create the bdev.
         create_msg = self.rpc.create(nqn=nqn, pool_name=resp['pool'],
@@ -389,7 +379,7 @@ class CephNVMECharm(ops.CharmBase):
         bdev_spec = None
         joined = 0
 
-        for addr, _ in peers:
+        for addr, *_ in peers:
             resp = self._msgloop(msg, addr=addr, sock=sock)
             if not resp:
                 # Empty response means this peer doesn't handle the NQN.
@@ -465,7 +455,7 @@ class CephNVMECharm(ops.CharmBase):
             event.fail('NQN %s not found' % nqn)
             return
 
-        for addr, _ in self._peer_addrs():
+        for addr, *_ in self._peer_addrs():
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
@@ -481,7 +471,7 @@ class CephNVMECharm(ops.CharmBase):
             event.fail('Host %s or NQN %s not found' % (host, nqn))
             return
 
-        for addr, _ in self._peer_addrs():
+        for addr, *_ in self._peer_addrs():
             self._msgloop(msg, addr=addr, sock=sock)
 
         event.set_results({'message': 'success'})
@@ -494,7 +484,7 @@ class CephNVMECharm(ops.CharmBase):
             event.fail('NQN %s not found' % nqn)
             return
 
-        event.set_results({'hosts': res['hosts']})
+        event.set_results({'hosts': res})
 
     def _pause_or_resume(self, cmd, event):
         try:
@@ -538,6 +528,7 @@ class CephNVMECharm(ops.CharmBase):
                                  description='NVMe-oF target',
                                  path=nvmf_tgt,
                                  args=' '.join([nvmf_path, '-m', cpumask]))
+        utils.wait_for_systemd_service(SPDK_TGT_FILE)
 
         proxy_path = os.path.realpath(charm_dir + '/src/proxy.py')
         args = ' '.join([str(self.config['proxy-port']), PROXY_WORKING_DIR])

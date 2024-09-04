@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import argparse
-from collections import namedtuple
 import json
 import logging
 import os
@@ -30,7 +29,6 @@ import utils
 
 
 NQN_BASE = 'nqn.2014-08.org.nvmexpress:uuid:'
-RPCHandler = namedtuple('RPCHandler', ['expand', 'post'])
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +228,7 @@ class Proxy:
             self._write_cmd(cmd)
             yield cmd
         else:
-            self.cmd_file.seek()
+            self.cmd_file.seek(0)
             while True:
                 try:
                     yield pickle.load(self.cmd_file)

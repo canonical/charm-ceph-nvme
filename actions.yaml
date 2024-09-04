@@ -7,12 +7,11 @@ create-endpoint:
     rbd-pool:
       type: string
       description: "The RBD pool where the image is allocated"
-    adrfam:
+    subnet:
       type: string
-      default: any
       description: |
-        Address family on which to create the endpoint. Can be
-        one of 'ipv4', 'ipv6' or 'any'.
+        Subnet on which to pick a host on which to create the
+        endpoint. Can be an IPv4 or IPv6 network.
     units:
       type: string
       description: |
@@ -42,12 +41,11 @@ join-endpoint:
     nqn:
       type: string
       description: "The NQN of the endpoint"
-    adrfam:
+    subnet:
       type: string
-      default: any
       description: |
-        Address family on which to create the endpoint. Can be
-        one of 'ipv4', 'ipv6' or 'any'.
+        Subnet on which to pick a host on which to create the
+        endpoint. Can be an IPv4 or IPv6 network.
     nmax:
       type: integer
       default: -1

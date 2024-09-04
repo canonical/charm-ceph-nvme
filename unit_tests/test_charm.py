@@ -102,7 +102,8 @@ class TestCharm(unittest.TestCase):
 
     def _setup_mock_params(self, check_output):
         check_output.return_value = (
-            b'{"private-address":"1.1.1.1","egress-subnets":"1.1.1.1/32"}')
+            b'{"private-address":"1.1.1.1","egress-subnets":"1.1.1.1/32",'
+            b'"ingress-address":"1.1.1.1"}')
         event = MagicMock()
         event.set_results = MagicMock()
         event.fail = MagicMock()
