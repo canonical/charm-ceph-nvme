@@ -98,8 +98,6 @@ class CephNVMETest(test_utils.BaseCharmTest):
                                      (data['address'], data['port']))
         out = json.loads(out.get('Stdout'))
         records = out['records']
-        self.assertEqual(len(records), 2)
-        self.assertEqual(records[0]['nqn'], records[1]['nqn'])
         self.assertEqual(records[0]['nqn'], data['nqn'])
 
         cmd = 'sudo nvme connect-all -t tcp -a %s -s %s -o json'

@@ -21,7 +21,6 @@ import shutil
 import socket
 import subprocess
 import tempfile
-import time
 
 logger = logging.getLogger(__name__)
 
@@ -97,23 +96,6 @@ def create_systemd_svc(file_path, contents, **kwargs):
         subprocess.check_call(['sudo', 'systemctl', 'daemon-reload'])
         subprocess.check_call(['sudo', 'systemctl', 'enable', service])
         subprocess.check_call(['sudo', 'systemctl', 'start', service])
-
-
-def wait_for_systemd_service(file_path, timeout=5 * 60):
-    service = _systemd_service_from_path(file_path)
-    cmd = ['systemctl', 'is-active', '--quiet', service]
-    end = time.time() + timeout
-    while True:
-        try:
-            subprocess.check_call(cmd)
-            return True
-        except Exception:
-            pass
-
-        if time.time() > end:
-            return False
-
-        time.sleep(0.1)
 
 
 def create_dir(path):

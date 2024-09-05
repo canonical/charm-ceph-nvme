@@ -18,3 +18,9 @@ options:
     default: ''
     description: |
       The password for the NVMe tab in the dashboard.
+
+  nr-hugepages:
+    type: int
+    default: 2048
+    description: |
+      The amount of hugepages to use. If set to 0, don't use them.

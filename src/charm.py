@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 SPDK_TGT_FILE = '/lib/systemd/system/nvmf_tgt.service'
 PROXY_FILE = '/lib/systemd/system/nvmf_proxy.service'
 PROXY_WORKING_DIR = '/var/lib/nvme-of/'
-PROXY_CMDS_FILE = PROXY_WORKING_DIR + 'cmds'
+PROXY_CMDS_FILE = os.path.join(PROXY_WORKING_DIR, 'cmds')
 
 SYSTEMD_TEMPLATE = """
 [Unit]
@@ -69,6 +69,7 @@ class CephNVMECharm(ops.CharmBase):
         obs = self.framework.observe
         obs(self.on.start, self._on_start)
         obs(self.on.install, self._on_install)
+        obs(self.on.config_changed, self.on_config_changed)
         obs(self.on.peers_relation_departed, self.on_peers_relation_departed)
         obs(self.on.create_endpoint_action, self.on_create_endpoint_action)
         obs(self.on.delete_endpoint_action, self.on_delete_endpoint_action)
@@ -514,30 +515,39 @@ class CephNVMECharm(ops.CharmBase):
                'install'] + packages
         subprocess.check_call(cmd)
 
-    def _install_systemd_services(self, cpumask):
+    def _render_config(self):
+        config_path = os.path.join(PROXY_WORKING_DIR, 'config.json')
+        with open(config_path, 'w') as config_file:
+            conf = {k: self.config.get(k, '')
+                    for k in ('cpuset', 'proxy-port', 'nr-hugepages')}
+            config_file.write(json.dumps(conf))
+        return config_path
+
+    def on_config_changed(self, event):
+        self._render_config()
+
+    def _install_systemd_services(self):
         self._install_packages(self.PACKAGES)
+        config_path = self._render_config()
+
         charm_dir = os.environ.get('JUJU_CHARM_DIR', './')
         nvmf_path = os.path.realpath(charm_dir + '/spdk/build/bin/nvmf_tgt')
         nvmf_tgt = os.path.realpath(charm_dir + '/src/nvmf.py')
         utils.create_systemd_svc(SPDK_TGT_FILE, SYSTEMD_TEMPLATE,
                                  description='NVMe-oF target',
                                  path=nvmf_tgt,
-                                 args=' '.join([nvmf_path, '-m', cpumask]))
-        utils.wait_for_systemd_service(SPDK_TGT_FILE)
+                                 args=' '.join([nvmf_path, config_path]))
 
         proxy_path = os.path.realpath(charm_dir + '/src/proxy.py')
-        args = ' '.join([str(self.config['proxy-port']), PROXY_WORKING_DIR])
-
         utils.create_systemd_svc(PROXY_FILE, SYSTEMD_TEMPLATE,
                                  description='proxy server for target',
-                                 path=proxy_path, args=args)
+                                 path=proxy_path,
+                                 args=config_path)
 
     def _on_install(self, event):
         """Handle charm installation."""
-        utils.create_dir(os.path.dirname(PROXY_CMDS_FILE))
-        cpuset = self.config.get("cpuset", "")
-        cpumask = utils.compute_cpumask(utils.compute_cpuset(cpuset))
-        self._install_systemd_services(hex(cpumask))
+        utils.create_dir(PROXY_WORKING_DIR)
+        self._install_systemd_services()
 
     def _on_start(self, event: ops.StartEvent):
         """Handle start event."""

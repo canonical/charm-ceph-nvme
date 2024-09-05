@@ -75,7 +75,7 @@ this endpoint as well and contribute to its high availability.
 Once an endpoint is created, we can allow-list hosts so that they can connect to it.
 To do so, we pass the host's own NQN, the endpoint's NQN and a password (or key).
 
-    juju run ceph-nvme/0 add-host hostnqn=host-nqn nqn=endpoint-nqn key=some-password
+    juju run ceph-nvme/0 add-host hostnqn=host-nqn nqn=endpoint-nqn key=dhchap-key
 
 This will make it possible for the host to connect to the endpoint with the specified
 NQN on any unit that manages it.
@@ -83,8 +83,8 @@ NQN on any unit that manages it.
 The host's NQN is stored in different places depending on the connector used. For the
 nvme-cli utility, it's usually at `/etc/nvme/hostnqn`.
 
-In addition, if the host NQN is set to an asterisk (\*), every host will be allowed,
-and no further checks will be performed.
+In addition, if the host NQN is set to 'any', every host will be allowed, and no further
+checks will be performed.
 
 ### delete-host
 
@@ -118,10 +118,10 @@ Any tool that implements the NVMe-oF protocol on the initiator side can be
 used to connect to an endpoint. The most common one is the `nvme-cli`
 utility. In order to connect to an endpoint, we can run the following:
 
-    sudo nvme connect -t tcp -n my-nqn -a ip-addr -s ip-port --tls_key=key
+    sudo nvme connect -t tcp -n my-nqn -a ip-addr -s ip-port --dhchap-secret=key
 
 Where the NQN, IP address and port can be retrieved from the output of the
-`list-endpoints` or `create-endpoint` actions, and the TLS key is the one
+`list-endpoints` or `create-endpoint` actions, and the DH-CHAP key is the one
 used in the `add-host` action.
 
 This will yield a device path like `/dev/nvme0n1`, which will be backed by
@@ -143,7 +143,7 @@ command, which will list all the available paths for an endpoint:
 If the above command shows more than one endpoint, then we can run the
 `connect-all` command to connect to all endpoints at once:
 
-    sudo nvme connect-all -t tcp -a ip-addr -s ip-port -n my-nqn --tls_key=key
+    sudo nvme connect-all -t tcp -a ip-addr -s ip-port -n my-nqn --dhchap-secret=key
 
 And afterwards, the device will be backed by _all_ units.
 

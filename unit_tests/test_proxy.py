@@ -52,10 +52,12 @@ class TestProxy(unittest.TestCase):
         def _mp_proxy(out):
             wdir = tempfile.TemporaryDirectory()
             wname = wdir.name
-            if not wname.endswith('/'):
-                wname += '/'
+            config_path = os.path.join(wname, 'config.json')
 
-            p = proxy.Proxy(LOCAL_PORT, wname, LOCAL_SOCK)
+            with open(config_path, 'w') as file:
+                file.write('{"proxy-port":%d}' % LOCAL_PORT)
+
+            p = proxy.Proxy(config_path, LOCAL_SOCK)
             out.append(1)
             p.serve()
 

@@ -14,33 +14,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import subprocess
 import sys
 
+sys.path.append(os.path.dirname(os.path.abspath(__name__)))
+import utils
+
 HUGEPAGES = '/proc/sys/vm/nr_hugepages'
-HUGEPAGE_TARGET = 2048
 
 
-def setup_hugepages():
+def setup_hugepages(target):
     try:
         with open(HUGEPAGES, 'r') as file:
             num = int(file.read())
-            if num >= HUGEPAGE_TARGET:
+            if num >= target:
                 return True
         rv, _ = subprocess.getstatusoutput('echo %d | sudo tee > %s' %
-                                           (HUGEPAGE_TARGET, HUGEPAGES))
+                                           (target, HUGEPAGES))
         return rv == 0
     except Exception as exc:
         print("failed to setup huge pages: %s" % str(exc))
         return False
 
 
-xname = sys.argv[1]
-args = sys.argv[2:]
-if not setup_hugepages():
-    print("warning: running without huge pages. expect a performance decrease")
-    args.extend(['--no-huge', '-s', str(4096)])
+def main():
+    xname = sys.argv[1]
+    config_path = sys.argv[2]
+    args = [os.path.basename(xname)]
 
-# Replace the current process with a call to the target.
-os.execv(xname, [os.path.basename(xname)] + args)
+    with open(config_path, 'r') as file:
+        config = json.loads(file.read())
+
+    nr_hugepages = config.get('nr-hugepages', 0)
+    if not nr_hugepages:
+        args.extend(['--no-huge', '-s', str(4096)])
+    elif not setup_hugepages(config.get('nr-hugepages', 0)):
+        print("warning: running without huge pages. expect a performance hit")
+        # Aim for at least 4G for the target.
+        args.extend(['--no-huge', '-s', str(4096)])
+
+    cpuset = utils.compute_cpuset(config.get('cpuset'))
+    args.extend(['-m', str(hex(utils.compute_cpumask(cpuset)))])
+
+    # Replace the current process with a call to the target.
+    os.execv(xname, args)
+
+
+if __name__ == '__main__':
+    main()

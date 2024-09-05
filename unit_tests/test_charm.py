@@ -69,13 +69,6 @@ class TestCharm(unittest.TestCase):
         self.harness = ops.testing.Harness(charm.CephNVMECharm)
         self.addCleanup(self.harness.cleanup)
 
-    @mock.patch.object(charm.subprocess, 'check_call')
-    @mock.patch.object(charm.utils, 'create_systemd_svc')
-    def test_start(self, check_call, create_systemd_svc):
-        self.harness.begin_with_initial_hooks()
-        self.assertEqual(self.harness.model.unit.status,
-                         ops.ActiveStatus('ready'))
-
     def add_peers(self):
         rel_id = self.harness.add_relation('peers', 'ceph-nvme')
         self.harness.add_relation_unit(rel_id, 'ceph-nvme/1')

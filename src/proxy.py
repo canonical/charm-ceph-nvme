@@ -21,6 +21,7 @@ import os
 import pickle
 import socket
 import sys
+import time
 import uuid
 
 sys.path.append(os.path.dirname(os.path.abspath(__name__)))
@@ -167,13 +168,16 @@ class ProxyRemoveHost:
 
 
 class Proxy:
-    def __init__(self, port, wdir, rpc_path):
-        self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.rpc_sock.connect(rpc_path)
+    def __init__(self, config_path, rpc_path):
+        with open(config_path) as file:
+            config = json.loads(file.read())
+
         self.receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.receiver.bind(('0.0.0.0', port))
-        self.wdir = wdir
-        self.cmd_file = open(self.wdir + 'cmds', 'a+b')
+        self.receiver.bind(('0.0.0.0', config['proxy-port']))
+        self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._connect(rpc_path)
+        self.wdir = os.path.dirname(config_path)
+        self.cmd_file = open(os.path.join(self.wdir, 'cmds'), 'a+b')
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
 
@@ -197,6 +201,18 @@ class Proxy:
                 if not getattr(cmd, 'fatal', True):
                     continue
                 raise
+
+    def _connect(self, rpc_path, timeout=5 * 60):
+        # It may take a while for SPDK to come up, specially if
+        # we're allocating huge pages, so retry the connection
+        # a bit to make up for that.
+        end = time.time() + timeout
+        while True:
+            if os.access(rpc_path, os.F_OK) or time.time() > end:
+                self.rpc_sock.connect(rpc_path)
+                return
+
+            time.sleep(0.1)
 
     def get_spdk_subsystems(self):
         """Return a dictionary describing the subsystems for the gateway."""
@@ -463,13 +479,11 @@ class Proxy:
 
 def main():
     parser = argparse.ArgumentParser(description='proxy server for SPDK')
-    parser.add_argument('port', help='proxy server port', type=int)
-    parser.add_argument('wdir', help='working directory for the proxy',
-                        type=str, default='/var/lib/nvme-of/')
+    parser.add_argument('config', help='path to configuration file')
     parser.add_argument('-s', dest='sock', help='local socket for RPC',
                         type=str, default='/var/tmp/spdk.sock')
     args = parser.parse_args()
-    proxy = Proxy(args.port, args.wdir, args.sock)
+    proxy = Proxy(args.config, args.sock)
     proxy.serve()
 
 
