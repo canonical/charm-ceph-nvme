@@ -415,7 +415,7 @@ class Proxy:
         if subsys is None:
             return {'error': 'nqn not found'}
         elif subsys.get('allow_any_host'):
-            return '*'
+            return 'any'
         return subsys.get('hosts', [])
 
     def _expand_leave(self, msg):
@@ -433,7 +433,7 @@ class Proxy:
 
     def _expand_host_add(self, msg):
         host = msg['host']
-        if host == '*':
+        if host == 'any':
             payload = self.rpc.nvmf_subsystem_allow_any_host(
                 nqn=msg['nqn'], allow_any_host=True)
             yield ProxyCommand(payload)

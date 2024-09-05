@@ -62,7 +62,7 @@ add-host:
   params:
     hostnqn:
       type: string
-      description: "The host's NQN, or an asterisk to allow any host"
+      description: "The host's NQN, or the word 'any' to allow any host"
 
     nqn:
       type: string
