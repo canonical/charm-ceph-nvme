@@ -17,7 +17,6 @@
 import json
 import logging
 import select
-import socket
 
 
 class MockSPDK:
@@ -55,15 +54,15 @@ class MockSPDK:
                                  'allow_any_host': False,
                                  'referrals': [], 'hosts': [], **kwargs}
 
-    def nvmf_delete_subsystem(self, **kwargs):
-        del self.nvmf_subsys[kwargs['nqn']]
+    def nvmf_delete_subsystem(self, nqn, **kwargs):
+        del self.nvmf_subsys[nqn]
 
-    def nvmf_subsystem_add_listener(self, **kwargs):
-        addrs = self.nvmf_subsys[kwargs['nqn']]['listen_addresses']
-        addrs.append(kwargs['listen_address'])
+    def nvmf_subsystem_add_listener(self, nqn, listen_address, **kwargs):
+        addrs = self.nvmf_subsys[nqn]['listen_addresses']
+        addrs.append(listen_address)
 
-    def nvmf_subsystem_remove_listener(self, **kwargs):
-        subsys = self.nvmf_subsys[kwargs['nqn']]
+    def nvmf_subsystem_remove_listener(self, nqn, **kwargs):
+        subsys = self.nvmf_subsys[nqn]
         ls = subsys['listener_addresses']
         for ix, listener in enumerate(ls):
             if self.dict_eq(listener, kwargs,
@@ -74,17 +73,14 @@ class MockSPDK:
 
         subsys['listen_addresses'] = self._list_rmidx(ls, ix)
 
-    def nvmf_subsystem_add_ns(self, **kwargs):
-        nqn = kwargs.pop('nqn')
-        ns = kwargs['namespace']
-        ns['name'] = ns['bdev_name']
-        self.nvmf_subsys[nqn]['namespaces'].append(ns)
+    def nvmf_subsystem_add_ns(self, nqn, namespace, **kwargs):
+        namespace['name'] = namespace['bdev_name']
+        self.nvmf_subsys[nqn]['namespaces'].append(namespace)
 
     def nvmf_get_subsystems(self, **kwargs):
         return list(self.nvmf_subsys.values())
 
-    def nvmf_subsystem_remove_ns(self, **kwargs):
-        nqn, nsid = kwargs['nqn'], kwargs['nsid']
+    def nvmf_subsystem_remove_ns(self, nqn, nsid, **kwargs):
         subsys = self.nvmf_subsys[nqn]
         listeners = subsys['listen_addresses']
         if nsid > len(listeners):
@@ -92,13 +88,11 @@ class MockSPDK:
 
         subsys['listen_addresses'] = self._list_rmidx(listeners, nsid - 1)
 
-    def nvmf_discovery_add_referral(self, **kwargs):
-        nqn = kwargs['subnqn']
-        self.nvmf_subsys[nqn]['referrals'].append(kwargs['address'])
+    def nvmf_discovery_add_referral(self, subnqn, address, **kwargs):
+        self.nvmf_subsys[subnqn]['referrals'].append(address)
 
-    def nvmf_discovery_remove_referral(self, **kwargs):
-        nqn = kwargs['subnqn']
-        subsys = self.nvmf_subsys[nqn]
+    def nvmf_discovery_remove_referral(self, subnqn, **kwargs):
+        subsys = self.nvmf_subsys[subnqn]
         for ix, ref in enumerate(subsys['referrals']):
             if self.dict_eq(ref, kwargs['address'],
                             ('traddr', 'trsvcid', 'trtype')):
@@ -108,15 +102,14 @@ class MockSPDK:
 
         subsys['referrals'] = self._list_rmidx(subsys['referrals'], ix)
 
-    def nvmf_subsystem_allow_any_host(self, **kwargs):
-        self.nvmf_subsys[kwargs['nqn']]['allow_any_host'] = (
-            kwargs['allow_any_host'])
+    def nvmf_subsystem_allow_any_host(self, nqn, allow_any_host, **kwargs):
+        self.nvmf_subsys[nqn]['allow_any_host'] = allow_any_host
 
-    def nvmf_subsystem_add_host(self, **kwargs):
-        self.nvmf_subsys[kwargs['nqn']]['hosts'].append(kwargs['host'])
+    def nvmf_subsystem_add_host(self, nqn, host, **kwargs):
+        self.nvmf_subsys[nqn]['hosts'].append(host)
 
-    def nvmf_subsystem_remove_host(self, **kwargs):
-        subsys = self.nvmf_subsys[kwargs['nqn']]
+    def nvmf_subsystem_remove_host(self, nqn, **kwargs):
+        subsys = self.nvmf_subsys[nqn]
         for ix, host in enumerate(subsys['hosts']):
             if host == kwargs['host']:
                 break
@@ -125,30 +118,26 @@ class MockSPDK:
 
         subsys['hosts'] = self._list_rmidx(subsys['hosts'], ix)
 
-    def bdev_rbd_create(self, **kwargs):
-        name = kwargs['name']
+    def bdev_rbd_create(self, name, cluster_name, **kwargs):
         if name in self.rbds:
             raise ValueError('RBD bdev already present')
-
-        cluster = kwargs['cluster_name']
-        if cluster not in self.clusters:
+        elif cluster_name not in self.clusters:
             raise ValueError('cluster does not exist')
         self.rbds[name] = kwargs
 
-    def bdev_rbd_delete(self, **kwargs):
-        del self.rbds[kwargs['name']]
+    def bdev_rbd_delete(self, name, **kwargs):
+        del self.rbds[name]
 
-    def bdev_rbd_register_cluster(self, **kwargs):
-        name = kwargs['name']
+    def bdev_rbd_register_cluster(self, name, **kwargs):
         if name in self.clusters:
             raise ValueError('cluster already registered')
         self.clusters.add(name)
 
-    def keyring_file_add_key(self, **kwargs):
-        self.keys[kwargs['name']] = kwargs['path']
+    def keyring_file_add_key(self, name, path, **kwargs):
+        self.keys[name] = path
 
-    def keyring_file_remove_key(self, **kwargs):
-        del self.keys[kwargs['name']]
+    def keyring_file_remove_key(self, name, **kwargs):
+        del self.keys[name]
 
     def loop(self, timeout=None):
         rd, _, _ = select.select([self.sock], [], [], timeout)
