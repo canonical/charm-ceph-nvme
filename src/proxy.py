@@ -21,7 +21,6 @@ import os
 import pickle
 import socket
 import sys
-import tempfile
 import uuid
 
 sys.path.append(os.path.dirname(os.path.abspath(__name__)))
@@ -110,19 +109,13 @@ class ProxyAddHost:
         self.msg = msg
         self.dhchap_key = dhchap_key
 
-    @staticmethod
-    def _restore_key(path, contents):
-        if contents:
-            with open(path, 'w') as file:
-                file.write(contents)
-
     def __call__(self, proxy):
         if not self.dhchap_key:
             return proxy.msgloop(self.msg)
 
         params = self.msg['params']
         fname = proxy.key_file_name(params['nqn'], params['host'])
-        path = proxy.wdir + fname
+        path = os.path.join(proxy.wdir, fname)
 
         try:
             f = open(path, 'r')
@@ -131,22 +124,44 @@ class ProxyAddHost:
         except Exception:
             contents = None
 
-        if self.dhchap_key != contents:
+        if contents is not None:
+            if self.dhchap_key != contents:
+                raise ProxyError('host already present with a different key')
+        else:
             with open(path, 'w') as file:
                 file.write(self.dhchap_key)
 
-        payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
-        rv = proxy.msgloop(payload)
-        if proxy.is_error(rv):
-            self._restore_key(path, contents)
-            raise KeyError(rv['error'])
+            payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
+            rv = proxy.msgloop(payload)
+            if proxy.is_error(rv):
+                os.remove(path)
+                raise ProxyError(rv['error'])
 
         payload = self.msg.copy()
         payload['params']['dhchap_key'] = fname
         rv = proxy.msgloop(payload)
+        if proxy.is_error(rv) and contents is None:
+            proxy.msgloop(proxy.rpc.keyring_file_remove_key(name=fname))
+            os.remove(path)
 
+        return rv
+
+
+class ProxyRemoveHost:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __call__(self, proxy):
+        nqn, host = self.msg['nqn'], self.msg['host']
+        payload = proxy.rpc.nvmf_subsystem_remove_host(nqn=nqn, host=host)
+        rv = proxy.msgloop(payload)
         if proxy.is_error(rv):
-            self._restore_key(path, contents)
+            return rv
+
+        fname = proxy.key_file_name(nqn, host)
+        payload = proxy.rpc.keyring_file_remove_key(name=fname)
+        if not proxy.is_error(proxy.msgloop(payload)):
+            os.remove(os.path.join(proxy.wdir, fname))
 
         return rv
 
@@ -253,7 +268,7 @@ class Proxy:
         post = getattr(self, '_post_' + method, None)
 
         if expand is None and post is not None:
-            expand = lambda *_: ()
+            expand = lambda *_: ()   # noqa
 
         return expand, post
 
@@ -324,7 +339,7 @@ class Proxy:
     @staticmethod
     def key_file_name(nqn, host):
         # Create a unique file path for a key.
-        nqn = nqn.replace(NQN_BASE, '')
+        nqn = nqn.replace(NQN_BASE, '').replace('-', '')
         return nqn + '@' + host
 
     @staticmethod
@@ -443,15 +458,7 @@ class Proxy:
             yield ProxyAddHost(payload, msg.get('dhchap_key'))
 
     def _expand_host_del(self, msg):
-        nqn = msg['nqn']
-        host = msg['host']
-
-        payload = self.rpc.nvmf_subsystem_remove_host(nqn=nqn, host=host)
-        yield ProxyCommand(payload)
-
-        payload = self.rpc.keyring_file_remove_key(
-            name=self.key_file_name(nqn, host))
-        yield ProxyCommand(payload, fatal=False)
+        yield ProxyRemoveHost(msg)
 
 
 def main():

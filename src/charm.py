@@ -117,10 +117,6 @@ class CephNVMECharm(ops.CharmBase):
         except Exception:
             return '0.0.0.0'
 
-    @staticmethod
-    def _get_egress_networks(srepr):
-        return [ipaddress.ip_network(x) for x in srepr.split(',')]
-
     def _rpc_sock(self):
         """Create a socket to communicate with the proxy."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -246,7 +242,6 @@ class CephNVMECharm(ops.CharmBase):
     def _handle_ha_create(self, response, peers, msg, sock, event):
         valid = [{'addr': response['addr'], 'port': response['port'],
                   'rpc_addr': '127.0.0.1'}]
-        adrfam = event.params.get('adrfam', 'any')
 
         # Tell the other peers to create the bdev, subsystem and namespace.
         for peer, (addr, _, xaddr) in peers:
@@ -362,7 +357,7 @@ class CephNVMECharm(ops.CharmBase):
         # With the endpoint created, add the hosts, if any.
         if resp.get('allow_any_host'):
             # This call cannot fail.
-            self._msgloop(self.rpc.host_add(nqn=nqn, host='*'))
+            self._msgloop(self.rpc.host_add(nqn=nqn, host='any'))
         else:
             for elem in resp.get('hosts', ()):
                 tmp = self._msgloop(self.rpc.host_add(

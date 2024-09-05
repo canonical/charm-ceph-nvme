@@ -102,8 +102,7 @@ def create_systemd_svc(file_path, contents, **kwargs):
 def wait_for_systemd_service(file_path, timeout=5 * 60):
     service = _systemd_service_from_path(file_path)
     cmd = ['systemctl', 'is-active', '--quiet', service]
-    time_ = time.time
-    end = time_() + timeout
+    end = time.time() + timeout
     while True:
         try:
             subprocess.check_call(cmd)
@@ -111,10 +110,11 @@ def wait_for_systemd_service(file_path, timeout=5 * 60):
         except Exception:
             pass
 
-        if time_() > end:
+        if time.time() > end:
             return False
 
         time.sleep(0.1)
+
 
 def create_dir(path):
     """Create a directory and all the needed parents."""
