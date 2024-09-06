@@ -2,9 +2,9 @@ series: &series noble
 
 machines:
   '1':
-    constraints: virt-type=virtual-machine mem=4G cores=2
+    constraints: virt-type=virtual-machine mem=6G cores=2
   '2':
-    constraints: virt-type=virtual-machine mem=4G cores=2
+    constraints: virt-type=virtual-machine mem=6G cores=2
 
 applications:
   microceph:
@@ -18,7 +18,7 @@ applications:
   ceph-nvme:
     charm: ../../ceph-nvme.charm
     num_units: 2
-    config:
+    options:
       nr-hugepages: 0
     to:
       - '1'
