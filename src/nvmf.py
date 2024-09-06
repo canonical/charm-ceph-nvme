@@ -48,9 +48,7 @@ def main():
         config = json.loads(file.read())
 
     nr_hugepages = config.get('nr-hugepages', 0)
-    if not nr_hugepages:
-        args.extend(['--no-huge', '-s', str(4096)])
-    elif not setup_hugepages(config.get('nr-hugepages', 0)):
+    if not nr_hugepages or not setup_hugepages(nr_hugepages):
         print("warning: running without huge pages. expect a performance hit")
         # Aim for at least 4G for the target.
         args.extend(['--no-huge', '-s', str(4096)])

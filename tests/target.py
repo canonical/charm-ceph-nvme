@@ -36,10 +36,6 @@ def setup_osds_and_pools():
         zaza_model.run_on_unit('microceph/0', cmd)
 
     states = {
-        'ubuntu': {
-            'workload-status': 'active',
-            'workload-status-message-prefix': ''
-        },
         'microceph': {
             'workload-status': 'active',
             'workload-status-message-prefix': ''
@@ -88,20 +84,27 @@ class CephNVMETest(test_utils.BaseCharmTest):
         d2 = action_obj.data['results']
         self.assertEqual(d2['nqn'], data['nqn'])
 
-        # Mount the device on the Ubuntu unit.
-        if self._install_nvme('ubuntu/0') != 0:
+        # Allow any host
+        action_obj = zaza_model.run_action(
+            unit_name='ceph-nvme/0',
+            action_name='add-host',
+            action_params={'nqn': data['nqn'], 'hostnqn': 'any'})
+        zaza_utils.assertActionRanOK(action_obj)
+
+        # Mount the device on one unit.
+        if self._install_nvme('ceph-nvme/0') != 0:
             # Unit doesn't have the nvme-fabrics driver - Abort.
             raise unittest.SkipTest('Skipping test due to lack of NVME driver')
 
         cmd = 'sudo nvme discover -t tcp -a %s -s %s -o json'
-        out = zaza_model.run_on_unit('ubuntu/0', cmd %
+        out = zaza_model.run_on_unit('ceph-nvme/0', cmd %
                                      (data['address'], data['port']))
         out = json.loads(out.get('Stdout'))
         records = out['records']
         self.assertEqual(records[0]['nqn'], data['nqn'])
 
         cmd = 'sudo nvme connect-all -t tcp -a %s -s %s -o json'
-        out = zaza_model.run_on_unit('ubuntu/0', cmd %
+        out = zaza_model.run_on_unit('ceph-nvme/0', cmd %
                                      (data['address'], data['port']))
         out = json.loads(out.get('Stdout'))
         for elem in out['Subsystems']:
@@ -125,7 +128,7 @@ class CephNVMETest(test_utils.BaseCharmTest):
             raise RuntimeError('NQN %s not found' % data['nqn'])
 
         cmd = 'sudo nvme list -o json'
-        out = zaza_model.run_on_unit('ubuntu/0', cmd)
+        out = zaza_model.run_on_unit('ceph-nvme/0', cmd)
         out = json.loads(out.get('Stdout'))
         for elem in out['Devices']:
             if 'SPDK' in elem['ModelNumber']:
@@ -135,10 +138,10 @@ class CephNVMETest(test_utils.BaseCharmTest):
             raise RuntimeError('Device not found')
 
         msg = 'Hello there!'
-        zaza_model.run_on_unit('ubuntu/0',
+        zaza_model.run_on_unit('ceph-nvme/0',
                                'echo "%s" | sudo tee %s' % (msg, device))
 
         cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' % (
             device, len(msg))
-        out = zaza_model.run_on_unit('ubuntu/0', cmd)
+        out = zaza_model.run_on_unit('ceph-nvme/0', cmd)
         self.assertEqual(out.get('Stdout'), msg)
