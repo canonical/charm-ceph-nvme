@@ -54,7 +54,7 @@ class CephNVMETest(test_utils.BaseCharmTest):
         zaza_model.run_on_unit(unit, cmd % 'linux-modules-extra')
         zaza_model.run_on_unit(unit, 'sudo modprobe nvme-core')
         zaza_model.run_on_unit(unit, 'sudo modprobe nvme-tcp')
-        zaza_model.run_on_unit(unit, 'sudo apt install nvme-cli')
+        zaza_model.run_on_unit(unit, 'sudo snap install nvme-cli')
         out = zaza_model.run_on_unit(unit, 'ls /dev/nvme-fabrics')
         return out.get('Code', 1)
 

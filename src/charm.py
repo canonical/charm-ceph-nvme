@@ -439,10 +439,10 @@ class CephNVMECharm(ops.CharmBase):
 
     def on_add_host_action(self, event):
         nqn = event.params.get('nqn')
-        key = event.params.get('key')
+        key = event.params.get('dhchap-key')
         kwargs = dict(nqn=nqn, host=event.params.get('hostnqn'))
         if key:
-            kwargs['key'] = key
+            kwargs['dhchap-key'] = key
 
         msg = self.rpc.host_add(**kwargs)
         sock = self._rpc_sock()
@@ -495,6 +495,7 @@ class CephNVMECharm(ops.CharmBase):
         return self._pause_or_resume('stop', event)
 
     def _resume(self, event):
+        utils.setup_hugepages(int(self.config['nr-hugepages']))
         return self._pause_or_resume('start', event)
 
     def on_reset_target_action(self, event):
@@ -529,6 +530,7 @@ class CephNVMECharm(ops.CharmBase):
     def _install_systemd_services(self):
         self._install_packages(self.PACKAGES)
         config_path = self._render_config()
+        utils.setup_hugepages(int(self.config['nr-hugepages']))
 
         charm_dir = os.environ.get('JUJU_CHARM_DIR', './')
         nvmf_path = os.path.realpath(charm_dir + '/spdk/build/bin/nvmf_tgt')

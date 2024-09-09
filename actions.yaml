@@ -68,9 +68,9 @@ add-host:
       type: string
       description: "The NQN of the endpoint"
 
-    key:
+    dhchap-key:
       type: string
-      description: "A unique key to identify the host"
+      description: "DH-CHAP key used to authenticate the host"
 
   required:
     - hostnqn

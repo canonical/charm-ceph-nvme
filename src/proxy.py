@@ -162,7 +162,10 @@ class ProxyRemoveHost:
         fname = proxy.key_file_name(nqn, host)
         payload = proxy.rpc.keyring_file_remove_key(name=fname)
         if not proxy.is_error(proxy.msgloop(payload)):
-            os.remove(os.path.join(proxy.wdir, fname))
+            try:
+                os.remove(os.path.join(proxy.wdir, fname))
+            except FileNotFoundError:
+                pass
 
         return rv
 

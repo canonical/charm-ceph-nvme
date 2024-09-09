@@ -22,6 +22,8 @@ import socket
 import subprocess
 import tempfile
 
+
+HUGEPAGES = '/proc/sys/vm/nr_hugepages'
 logger = logging.getLogger(__name__)
 
 
@@ -120,3 +122,16 @@ def get_free_port(address='127.0.0.1'):
     _, *extra = s.getsockname()
     s.close()
     return extra[0], fstr
+
+
+def setup_hugepages(target):
+    try:
+        with open(HUGEPAGES, 'r') as file:
+            num = int(file.read())
+            if num >= target:
+                return True
+        rv, _ = subprocess.getstatusoutput('echo %d | sudo tee > %s' %
+                                           (target, HUGEPAGES))
+        return rv == 0
+    except Exception:
+        return False
