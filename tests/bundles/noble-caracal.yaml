@@ -1,11 +1,5 @@
 series: &series noble
 
-machines:
-  '1':
-    constraints: virt-type=virtual-machine mem=6G cores=2
-  '2':
-    constraints: virt-type=virtual-machine mem=6G cores=2
-
 applications:
   microceph:
     charm: ch:microceph
@@ -20,9 +14,7 @@ applications:
     num_units: 2
     options:
       nr-hugepages: 0
-    to:
-      - '1'
-      - '2'
+      cpuset: "2"
 
 relations:
   - - 'microceph'

@@ -16,26 +16,17 @@
 
 import json
 import os
-import subprocess
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__name__)))
 import utils
 
-HUGEPAGES = '/proc/sys/vm/nr_hugepages'
 
-
-def setup_hugepages(target):
+def check_hugepages():
     try:
-        with open(HUGEPAGES, 'r') as file:
-            num = int(file.read())
-            if num >= target:
-                return True
-        rv, _ = subprocess.getstatusoutput('echo %d | sudo tee > %s' %
-                                           (target, HUGEPAGES))
-        return rv == 0
-    except Exception as exc:
-        print("failed to setup huge pages: %s" % str(exc))
+        with open(utils.HUGEPAGES, 'r') as file:
+            return int(file.read()) >= 2048
+    except Exception:
         return False
 
 
@@ -47,8 +38,7 @@ def main():
     with open(config_path, 'r') as file:
         config = json.loads(file.read())
 
-    nr_hugepages = config.get('nr-hugepages', 0)
-    if not nr_hugepages or not setup_hugepages(nr_hugepages):
+    if not check_hugepages():
         print("warning: running without huge pages. expect a performance hit")
         # Aim for at least 4G for the target.
         args.extend(['--no-huge', '-s', str(4096)])
