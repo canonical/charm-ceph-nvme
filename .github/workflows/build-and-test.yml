@@ -99,11 +99,11 @@ jobs:
 
           sudo snap install --classic juju-crashdump
 
-      - name: Run jammy-antelope tests
+      - name: Run noble caracal
         run: |
           date
           mv ~/artifacts/ceph-nvme.charm ./
-          tox -e func-target -- jammy-antelope
+          tox -e func-target -- noble-caracal
 
       - name: Generate crash dumps
         if: failure()

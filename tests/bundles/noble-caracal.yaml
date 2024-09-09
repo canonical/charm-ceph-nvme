@@ -1,10 +1,5 @@
 series: &series noble
 
-machines:
-    constraints: virt-type=virtual-machine mem=4G cores=2
-  '2':
-    constraints: virt-type=virtual-machine mem=4G cores=2
-
 applications:
   microceph:
     charm: ch:microceph
