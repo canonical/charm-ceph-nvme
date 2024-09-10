@@ -27,12 +27,13 @@ import src.charm as charm
 
 
 class MockSocket:
-    def __init__(self):
+    def __init__(self, skip_first=False):
         self.sendto = MagicMock()
         self.sendto.side_effect = self._sendto
         self.recv = MagicMock()
         self.recv.side_effect = self._recv
         self.response = None
+        self.skip_first = skip_first
 
     def _sendto(self, msg, *args):
         self.response = self._compute_response(msg)
@@ -56,11 +57,12 @@ class MockSocket:
         if method == 'list':
             ret = [ret]
         elif (method in ('find', 'host_add', 'host_del') and
-              msg['params']['nqn'] != 'nqn.1'):
+                msg['params']['nqn'] != 'nqn.1' or self.skip_first):
             ret = {}
             if method in ('host_add', 'host_del'):
                 ret['error'] = ""
 
+        self.skip_first = False
         return json.dumps(ret).encode('utf8')
 
 
@@ -93,14 +95,14 @@ class TestCharm(unittest.TestCase):
             self.assertEqual(calls[i][0], method)
             self.assertEqual(calls[i][1] != '1.1.1.1', local)
 
-    def _setup_mock_params(self, check_output):
+    def _setup_mock_params(self, check_output, **kwargs):
         check_output.return_value = (
             b'{"private-address":"1.1.1.1","egress-subnets":"1.1.1.1/32",'
             b'"ingress-address":"1.1.1.1"}')
         event = MagicMock()
         event.set_results = MagicMock()
         event.fail = MagicMock()
-        rpc_sock = MockSocket()
+        rpc_sock = MockSocket(**kwargs)
 
         self.harness.begin()
         charm = self.harness.charm
@@ -177,7 +179,8 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     @mock.patch.object(charm.subprocess, 'run')
     def test_join(self, run, check_output):
-        charm, rpc_sock, event = self._setup_mock_params(check_output)
+        charm, rpc_sock, event = self._setup_mock_params(check_output,
+                                                         skip_first=True)
         charm._select_addr = lambda *_: '1.1.1.1'
         event.params = {'nqn': 'nqn.1'}
 
@@ -187,11 +190,12 @@ class TestCharm(unittest.TestCase):
              'port': 1, 'units': 1})
 
         # We expect the following calls:
+        # local-find
         # remote-find
         # local-create
         # remote-join
         # local-join
-        expected = [('find', False), ('create', True),
+        expected = [('find', True), ('find', False), ('create', True),
                     ('join', False), ('join', True)]
         self._check_calls(rpc_sock.sendto.call_args_list, expected)
 
@@ -215,7 +219,8 @@ class TestCharm(unittest.TestCase):
     @mock.patch.object(charm.subprocess, 'check_output')
     def test_add_host(self, check_output):
         charm, rpc_sock, event = self._setup_mock_params(check_output)
-        event.params = {'hostnqn': 'host_nqn', 'nqn': 'nqn.1'}
+        event.params = {'hostnqn': 'host_nqn', 'nqn': 'nqn.1',
+                        'dhchap-key': 'some-key'}
 
         charm.on_add_host_action(event)
         event.set_results.assert_called()

@@ -119,9 +119,8 @@ class ProxyAddHost:
         path = os.path.join(proxy.wdir, fname)
 
         try:
-            f = open(path, 'r')
-            contents = f.read()
-            f.close()
+            with open(path, 'r') as f:
+                contents = f.read()
         except Exception:
             contents = None
 
@@ -132,6 +131,7 @@ class ProxyAddHost:
             with open(path, 'w') as file:
                 file.write(self.dhchap_key)
 
+            os.chmod(path, 0o600)
             payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
             rv = proxy.msgloop(payload)
             if proxy.is_error(rv):
@@ -358,8 +358,10 @@ class Proxy:
     @staticmethod
     def key_file_name(nqn, host):
         # Create a unique file path for a key.
-        nqn = nqn.replace(NQN_BASE, '').replace('-', '')
-        return nqn + '@' + host
+        def _normalize_nqn(val):
+            return val.replace(NQN_BASE, '').replace('-', '').replace(':', '')
+
+        return _normalize_nqn(nqn) + '@' + _normalize_nqn(host)
 
     @staticmethod
     def ns_dict(bdev_name, nqn):

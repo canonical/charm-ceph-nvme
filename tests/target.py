@@ -15,6 +15,7 @@
 """Encapsulate Ceph-NVMe-oF testing."""
 
 import json
+import time
 import unittest
 
 import zaza.model as zaza_model
@@ -34,6 +35,8 @@ def setup_osds_and_pools():
             'sudo microceph.rbd create --size 1024 mypool/myimage']
     for cmd in cmds:
         zaza_model.run_on_unit('microceph/0', cmd)
+        # These commands take some time, so let things settle.
+        time.sleep(1)
 
     states = {
         'microceph': {

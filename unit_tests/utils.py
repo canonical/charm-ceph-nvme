@@ -106,12 +106,12 @@ class MockSPDK:
         self.nvmf_subsys[nqn]['allow_any_host'] = allow_any_host
 
     def nvmf_subsystem_add_host(self, nqn, host, **kwargs):
-        self.nvmf_subsys[nqn]['hosts'].append(host)
+        self.nvmf_subsys[nqn]['hosts'].append({'host': host, **kwargs})
 
     def nvmf_subsystem_remove_host(self, nqn, **kwargs):
         subsys = self.nvmf_subsys[nqn]
         for ix, host in enumerate(subsys['hosts']):
-            if host == kwargs['host']:
+            if host['host'] == kwargs['host']:
                 break
         else:
             raise ValueError('host not found')

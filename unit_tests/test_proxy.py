@@ -120,7 +120,8 @@ class TestProxy(unittest.TestCase):
 
         msg = self.rpc.host_list(nqn=prev['nqn'])
         rv = self.msgloop(msg)
-        self.assertEqual(rv, ['host'])
+        self.assertEqual(len(rv), 1)
+        self.assertEqual(rv[0]['host'], 'host')
 
         msg = self.rpc.host_add(host='any', nqn=prev['nqn'])
         rv = self.msgloop(msg)

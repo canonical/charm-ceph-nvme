@@ -122,7 +122,7 @@ class CephNVMECharm(ops.CharmBase):
         """Create a socket to communicate with the proxy."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('0.0.0.0', 0))
-        sock.settimeout(0.3)
+        sock.settimeout(2)
         return sock
 
     def _msgloop(self, msg, addr=None, sock=None):
@@ -248,7 +248,10 @@ class CephNVMECharm(ops.CharmBase):
         for peer, (addr, _, xaddr) in peers:
             msg['params']['addr'] = xaddr
             peer_resp = self._msgloop(msg, addr=addr, sock=sock)
-            if 'error' not in peer_resp:
+            if 'error' in peer_resp:
+                logger.warning('peer %s failed to create bdev: %s' %
+                               (peer, peer_resp['error']))
+            else:
                 valid.append({'addr': peer_resp['addr'], 'rpc_addr': addr,
                               'port': peer_resp['port']})
 
@@ -260,7 +263,10 @@ class CephNVMECharm(ops.CharmBase):
                                          addresses=self._exclude(valid, i))
                 peer_resp = self._msgloop(join_msg, addr=peer['rpc_addr'],
                                           sock=sock)
-                if 'error' not in peer_resp:
+                if 'error' in peer_resp:
+                    logger.warning('peer %s failed to refer to us: %s' %
+                                   (peer, peer_resp['error']))
+                else:
                     added += 1
 
         if not added:
@@ -395,12 +401,16 @@ class CephNVMECharm(ops.CharmBase):
             join_msg = self.rpc.join(nqn=nqn, addresses=alist)
             rv = self._msgloop(join_msg, addr=addr, sock=sock)
             if 'error' in rv:
+                logger.warning('peer %s failed to refer to us: %s' %
+                               (addr, rv['error']))
                 continue
 
             # On success, join our peer.
             alist[0] = {'addr': addr, 'port': resp['port']}
             rv = self._msgloop(join_msg, addr='127.0.0.1', sock=sock)
             if 'error' in rv:
+                logger.warning('could not join peer %s: %s' %
+                               (addr, rv['error']))
                 leave_msg = self.rpc.leave(
                     nqn=nqn, addr=bdev_spec['addr'], port=bdev_spec['port'])
                 self._msgloop(leave_msg, addr=addr, sock=sock)
@@ -423,6 +433,10 @@ class CephNVMECharm(ops.CharmBase):
         if num_max <= 0:
             num_max = len(peers)
 
+        if self._msgloop(self.rpc.find(nqn=nqn)):
+            event.fail('unit already handles NQN')
+            return
+
         msg = self.rpc.find(nqn=nqn)
         joined, bdev = self._handle_join_peers(msg, nqn, peers, num_max, event)
 
@@ -442,13 +456,13 @@ class CephNVMECharm(ops.CharmBase):
         key = event.params.get('dhchap-key')
         kwargs = dict(nqn=nqn, host=event.params.get('hostnqn'))
         if key:
-            kwargs['dhchap-key'] = key
+            kwargs['dhchap_key'] = key
 
         msg = self.rpc.host_add(**kwargs)
         sock = self._rpc_sock()
         res = self._msgloop(msg, sock=sock)
         if 'error' in res:
-            event.fail('NQN %s not found' % nqn)
+            event.fail('Failed to add host: %s' % res['error'])
             return
 
         for addr, *_ in self._peer_addrs():
