@@ -433,7 +433,8 @@ class CephNVMECharm(ops.CharmBase):
         if num_max <= 0:
             num_max = len(peers)
 
-        if self._msgloop(self.rpc.find(nqn=nqn)):
+        tmp = self._msgloop(self.rpc.find(nqn=nqn))
+        if tmp and 'error' not in tmp:
             event.fail('unit already handles NQN')
             return
 
