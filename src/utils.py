@@ -51,6 +51,7 @@ def default_cpuset(cpus):
 
 
 def compute_cpuset(spec):
+    """Compute the list of cores to be used given a spec."""
     cpuset = spec.strip()
     cpus = list(os.sched_getaffinity(0))
 
@@ -90,6 +91,7 @@ def _systemd_service_from_path(file_path):
 
 
 def create_systemd_svc(file_path, contents, **kwargs):
+    """Create systemd service and launch it."""
     service = _systemd_service_from_path(file_path)
     with tempfile.NamedTemporaryFile(mode='w+') as file:
         file.write(contents.format(**kwargs))
@@ -106,6 +108,7 @@ def create_dir(path):
 
 
 def get_adrfam(addr):
+    """Get the socket address in integer and string format for an address."""
     try:
         socket.inet_pton(socket.AF_INET, addr)
         return socket.AF_INET, 'IPv4'
@@ -125,6 +128,7 @@ def get_free_port(address='127.0.0.1'):
 
 
 def setup_hugepages(target):
+    """Attempt to allocate a number of huge pages."""
     try:
         with open(HUGEPAGES, 'r') as file:
             num = int(file.read())

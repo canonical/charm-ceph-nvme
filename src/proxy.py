@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import argparse
+import errno
 import json
 import logging
 import os
@@ -110,6 +111,17 @@ class ProxyAddHost:
         self.msg = msg
         self.dhchap_key = dhchap_key
 
+    @staticmethod
+    def cleanup(proxy, path, response, fname=None):
+        if fname is not None:
+            proxy.msgloop(proxy.rpc.keyring_file_remove_key(name=fname))
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+        raise ProxyError(response['error'])
+
     def __call__(self, proxy):
         if not self.dhchap_key:
             return proxy.msgloop(self.msg)
@@ -124,26 +136,23 @@ class ProxyAddHost:
         except Exception:
             contents = None
 
-        if contents is not None:
-            if self.dhchap_key != contents:
-                raise ProxyError('host already present with a different key')
-        else:
+        if contents is None:
             with open(path, 'w') as file:
                 file.write(self.dhchap_key)
-
             os.chmod(path, 0o600)
-            payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
-            rv = proxy.msgloop(payload)
-            if proxy.is_error(rv):
-                os.remove(path)
-                raise ProxyError(rv['error'])
+        elif contents != self.dhchap_key:
+            raise ProxyError('host already present with a different key')
+
+        payload = proxy.rpc.keyring_file_add_key(name=fname, path=path)
+        rv = proxy.msgloop(payload)
+        if proxy.is_error(rv) and rv['error'].get('code') != -errno.EEXIST:
+            self.cleanup(proxy, path, rv)
 
         payload = self.msg.copy()
         payload['params']['dhchap_key'] = fname
         rv = proxy.msgloop(payload)
         if proxy.is_error(rv) and contents is None:
-            proxy.msgloop(proxy.rpc.keyring_file_remove_key(name=fname))
-            os.remove(path)
+            self.cleanup(proxy, path, rv, fname)
 
         return rv
 
