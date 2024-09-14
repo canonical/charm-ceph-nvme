@@ -266,8 +266,7 @@ class Proxy:
         if not size:
             # File is empty.
             logger.info('SPDK file is empty; starting bootstrap process')
-            payload = self.rpc.nvmf_create_transport(trtype='tcp')
-            cmd = ProxyCommand(payload)
+            cmd = ProxyCommand(self.rpc.nvmf_create_transport(trtype='tcp'))
             self._write_cmd(cmd)
             yield cmd
         else:

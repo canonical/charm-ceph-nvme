@@ -1,10 +1,11 @@
 setuptools<50.0.0  # https://github.com/pypa/setuptools/commit/04e3df22df840c6bb244e9b27bc56750c44b7c85
 requests>=2.18.4
-stestr>=2.2.0
-cliff<3.0.0
+stestr
+cliff
 coverage>=4.5.2
 pydantic < 2
 cosl
 mock
+git+https://github.com/juju/charm-helpers.git#egg=charmhelpers
 git+https://github.com/openstack-charmers/zaza.git#egg=zaza
 git+https://github.com/openstack-charmers/zaza-openstack-tests.git#egg=zaza.openstack
