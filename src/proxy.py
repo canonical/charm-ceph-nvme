@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import pickle
+import shutil
 import socket
 import sys
 import time
@@ -128,7 +129,7 @@ class ProxyAddHost:
 
         params = self.msg['params']
         fname = proxy.key_file_name(params['nqn'], params['host'])
-        path = os.path.join(proxy.wdir, fname)
+        path = os.path.join(proxy.key_dir, fname)
 
         try:
             with open(path, 'r') as f:
@@ -172,7 +173,7 @@ class ProxyRemoveHost:
         payload = proxy.rpc.keyring_file_remove_key(name=fname)
         if not proxy.is_error(proxy.msgloop(payload)):
             try:
-                os.remove(os.path.join(proxy.wdir, fname))
+                os.remove(os.path.join(proxy.key_dir, fname))
             except FileNotFoundError:
                 pass
 
@@ -188,8 +189,9 @@ class Proxy:
         self.receiver.bind(('0.0.0.0', config['proxy-port']))
         self.rpc_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._connect(rpc_path)
-        self.wdir = os.path.dirname(config_path)
-        self.cmd_file = open(os.path.join(self.wdir, 'cmds'), 'a+b')
+        wdir = os.path.dirname(config_path)
+        self.key_dir = os.path.join(wdir, 'keys')
+        self.cmd_file = open(os.path.join(wdir, 'cmds'), 'a+b')
         self.buffer = bytearray(4096 * 10)
         self.rpc = utils.RPC()
 
@@ -205,6 +207,13 @@ class Proxy:
             # healthy and needs no further configuring.
             return
 
+        # Start with a fresh key directory.
+        try:
+            shutil.rmtree(self.key_dir)
+        except FileNotFoundError:
+            pass
+
+        os.mkdir(self.key_dir)
         for cmd in cmds:
             try:
                 self._process_cmd(cmd)

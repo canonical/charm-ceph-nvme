@@ -48,6 +48,10 @@ def setup_osds_and_pools():
 
 
 class CephNVMETest(test_utils.BaseCharmTest):
+    HOST_NQN = (
+        'nqn.2014-08.org.nvmexpress:uuid:c1d418fc-4177-4034-880e-f24fb539a14b')
+    HOST_KEY = (
+        'DHHC-1:00:XW5dAgFfSfwRbMsUmA/1ApLw61q+XJVHlnTYitGXmbzt7CGB:')
 
     def _install_nvme(self, unit):
         zaza_model.run_on_unit(unit, 'sudo apt update')
@@ -78,6 +82,13 @@ class CephNVMETest(test_utils.BaseCharmTest):
             action_params={'nqn': data['nqn']})
         zaza_utils.assertActionRanOK(action_obj)
 
+        # Test that the second unit backs no endpoints.
+        action_obj = zaza_model.run_action(
+            unit_name='ceph-nvme/1',
+            action_name='list-endpoints')
+        zaza_utils.assertActionRanOK(action_obj)
+        self.assertFalse(action_obj.data['results']['endpoints'])
+
         # Finally, re-join the endpoint we just deleted.
         action_obj = zaza_model.run_action(
             unit_name='ceph-nvme/1',
@@ -87,11 +98,12 @@ class CephNVMETest(test_utils.BaseCharmTest):
         d2 = action_obj.data['results']
         self.assertEqual(d2['nqn'], data['nqn'])
 
-        # Allow any host
+        # Allow a host with a key.
         action_obj = zaza_model.run_action(
             unit_name='ceph-nvme/0',
             action_name='add-host',
-            action_params={'nqn': data['nqn'], 'hostnqn': 'any'})
+            action_params={'nqn': data['nqn'], 'hostnqn': self.HOST_NQN,
+                           'dhchap-key': self.HOST_KEY})
         zaza_utils.assertActionRanOK(action_obj)
 
         # Mount the device on one unit.
