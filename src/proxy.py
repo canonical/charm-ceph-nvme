@@ -455,7 +455,7 @@ class Proxy:
             yield ProxyCommand(payload)
 
     def _post_find(self, msg):
-        subsys = self.get_spdk_subsystems()[msg['nqn']]
+        subsys = self.get_spdk_subsystems().get(msg['nqn'])
         return self._subsystem_to_dict(subsys) if subsys else {}
 
     def _post_list(self, msg):

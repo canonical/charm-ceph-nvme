@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import json
-from mock import MagicMock
 import tempfile
 import unittest
 import unittest.mock as mock
@@ -28,9 +27,9 @@ import src.charm as charm
 
 class MockSocket:
     def __init__(self, skip_first=False):
-        self.sendto = MagicMock()
+        self.sendto = mock.MagicMock()
         self.sendto.side_effect = self._sendto
-        self.recv = MagicMock()
+        self.recv = mock.MagicMock()
         self.recv.side_effect = self._recv
         self.response = None
         self.skip_first = skip_first
@@ -99,9 +98,9 @@ class TestCharm(unittest.TestCase):
         check_output.return_value = (
             b'{"private-address":"1.1.1.1","egress-subnets":"1.1.1.1/32",'
             b'"ingress-address":"1.1.1.1"}')
-        event = MagicMock()
-        event.set_results = MagicMock()
-        event.fail = MagicMock()
+        event = mock.MagicMock()
+        event.set_results = mock.MagicMock()
+        event.fail = mock.MagicMock()
         rpc_sock = MockSocket(**kwargs)
 
         self.harness.begin()
@@ -264,7 +263,7 @@ class TestCharm(unittest.TestCase):
             prev = charm.PROXY_CMDS_FILE
             try:
                 charm.PROXY_CMDS_FILE = file.name
-                self.harness.charm.on_reset_target_action(MagicMock())
+                self.harness.charm.on_reset_target_action(mock.MagicMock())
                 file.seek(0)
                 self.assertFalse(file.read())
             finally:
@@ -275,8 +274,8 @@ class TestCharm(unittest.TestCase):
         check_call.side_effect = Exception('')
         self.harness.begin()
 
-        event = MagicMock()
-        event.fail = MagicMock()
+        event = mock.MagicMock()
+        event.fail = mock.MagicMock()
         with tempfile.NamedTemporaryFile(mode='w+') as file:
             contents = '!!!'
             file.write(contents)
