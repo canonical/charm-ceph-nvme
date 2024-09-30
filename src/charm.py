@@ -271,7 +271,7 @@ class CephNVMECharm(ops.CharmBase):
 
         if not added:
             logger.warning('failed to create additional endpoints for HA')
-        self._event_set_create_results(event, response, added)
+        self._event_set_create_results(event, response, added or 1)
 
     def _select_addr(self, subnet=None):
         if subnet is None:
@@ -446,6 +446,8 @@ class CephNVMECharm(ops.CharmBase):
                 event.fail('NQN not found')
                 return
             logger.warning('endpoint created but could not join any units')
+            self._msgloop(self.rpc.remove(nqn=bdev['nqn']))
+            return
         self._event_set_create_results(event, bdev, joined)
 
     def on_list_endpoints_action(self, event):

@@ -31,6 +31,7 @@ import utils
 
 
 NQN_BASE = 'nqn.2014-08.org.nvmexpress:uuid:'
+NQN_DISCOVERY = 'nqn.2014-08.org.nvmexpress.discovery'
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,11 @@ class ProxyCreateEndpoint:
         port, adrfam = utils.get_free_port(params['traddr'])
         params['adrfam'] = str(adrfam)
         params['trsvcid'] = str(port)
+        payload = proxy.rpc.nvmf_subsystem_add_listener(**kwargs)
+        self._check_reply(payload, proxy)
+        cleanup.append(proxy.rpc.nvmf_subsystem_remove_listener(**kwargs))
+
+        kwargs['nqn'] = NQN_DISCOVERY
         payload = proxy.rpc.nvmf_subsystem_add_listener(**kwargs)
         self._check_reply(payload, proxy)
         cleanup.append(proxy.rpc.nvmf_subsystem_remove_listener(**kwargs))

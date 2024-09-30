@@ -23,6 +23,17 @@ import zaza.openstack.utilities.generic as zaza_utils
 import zaza.openstack.charm_tests.test_utils as test_utils
 
 
+def check_key_present(unit):
+    while True:
+        result = zaza_model.run_on_unit(unit,
+                                        'sudo microceph.ceph auth ls')
+        if ('client.ceph-nvme' in result.get('Stdout') or
+                'client.ceph-nvme' in result.get('Stderr')):
+            break
+
+        time.sleep(0.1)
+
+
 def setup_osds_and_pools():
     for unit in zaza_model.get_units('microceph'):
         action_obj = zaza_model.run_action(
@@ -35,8 +46,6 @@ def setup_osds_and_pools():
             'sudo microceph.rbd create --size 1024 mypool/myimage']
     for cmd in cmds:
         zaza_model.run_on_unit('microceph/0', cmd)
-        # These commands take some time, so let things settle.
-        time.sleep(1)
 
     states = {
         'microceph': {
@@ -44,6 +53,11 @@ def setup_osds_and_pools():
             'workload-status-message-prefix': ''
         }
     }
+    zaza_model.wait_for_application_states(states=states)
+
+    for unit in (0, 1, 2):
+        check_key_present('microceph/' + str(unit))
+
     zaza_model.wait_for_application_states(states=states)
 
 

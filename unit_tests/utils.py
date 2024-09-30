@@ -30,6 +30,7 @@ class MockSPDK:
         self.clusters = set()
         self.nvmf_subsys = {}
         self.keys = {}
+        self.nvmf_create_subsystem(nqn='nqn.2014-08.org.nvmexpress.discovery')
 
     @staticmethod
     def _list_rmidx(lst, ix):
