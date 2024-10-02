@@ -90,7 +90,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3 -m pip install tox
+          sudo apt install tox
           if [ ! -d "$HOME/.local/share/juju" ]; then
             sudo snap install juju --channel=3.4/stable
             mkdir -p ~/.local/share/juju
