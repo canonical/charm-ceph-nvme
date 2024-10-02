@@ -5,10 +5,10 @@ tests:
   - tests.target.CephNVMETest
 
 target_deploy_status:
-  ubuntu:
-    workload-status: active
-    workload-status-message-prefix: ''
+  ceph-osd:
+    workload-status: blocked
+    workload-status-message: 'No block devices detected using current configuration'
 
-  microceph:
-    workload-status: active
-    workload-status-message-prefix: ''
+  ceph-mon:
+    workload-status: waiting
+    workload-status-message: 'Monitor bootstrapped but waiting for number of OSDs to reach expected-osd-count (1)'
