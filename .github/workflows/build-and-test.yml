@@ -68,7 +68,7 @@ jobs:
       - unit-test
       - build
     name: Functional tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, amd64, xlarge]
     steps:
 
       - name: Download charm
@@ -90,7 +90,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3 -m pip install tox
+          sudo apt install -y tox
           if [ ! -d "$HOME/.local/share/juju" ]; then
             sudo snap install juju --channel=3.4/stable
             mkdir -p ~/.local/share/juju

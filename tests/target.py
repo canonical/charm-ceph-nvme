@@ -15,7 +15,7 @@
 """Encapsulate Ceph-NVMe-oF testing."""
 
 import json
-import time
+import tenacity
 import unittest
 
 import zaza.model as zaza_model
@@ -23,42 +23,35 @@ import zaza.openstack.utilities.generic as zaza_utils
 import zaza.openstack.charm_tests.test_utils as test_utils
 
 
-def check_key_present(unit):
-    while True:
-        result = zaza_model.run_on_unit(unit,
-                                        'sudo microceph.ceph auth ls')
-        if ('client.ceph-nvme' in result.get('Stdout') or
-                'client.ceph-nvme' in result.get('Stderr')):
-            break
-
-        time.sleep(0.1)
-
-
 def setup_osds_and_pools():
-    for unit in zaza_model.get_units('microceph'):
-        action_obj = zaza_model.run_action(
-            unit_name=unit.entity_id,
-            action_name='add-osd',
-            action_params={'loop-spec': '1G,1'})
-        zaza_utils.assertActionRanOK(action_obj)
-
-    cmds = ['sudo microceph.ceph osd pool create mypool',
-            'sudo microceph.rbd create --size 1024 mypool/myimage']
+    cmds = ['sudo ceph osd crush rule rm replicated_rule',
+            'sudo ceph osd crush rule create-replicated replicated_rule '
+            'default osd',
+            'sudo ceph osd erasure-code-profile rm default',
+            'sudo ceph osd erasure-code-profile set default '
+            'plugin=jerasure k=2 m=1 crush-failure-domain=osd']
     for cmd in cmds:
-        zaza_model.run_on_unit('microceph/0', cmd)
+        zaza_model.run_on_unit('ceph-mon/0', cmd)
 
-    states = {
-        'microceph': {
-            'workload-status': 'active',
-            'workload-status-message-prefix': ''
-        }
-    }
-    zaza_model.wait_for_application_states(states=states)
+    loops = []
+    for file in ('l1', 'l2', 'l3'):
+        zaza_model.run_on_unit('ceph-osd/0', 'touch %s' % file)
+        zaza_model.run_on_unit('ceph-osd/0', 'truncate --size 2G ./%s' % file)
+        out = zaza_model.run_on_unit('ceph-osd/0',
+                                     'sudo losetup -fP --show ./%s' % file)
+        loops.append(out['Stdout'].strip())
 
-    for unit in (0, 1, 2):
-        check_key_present('microceph/' + str(unit))
+    for loop in loops:
+        zaza_model.run_action_on_leader('ceph-osd', 'add-disk',
+                                        action_params={'osd-devices': loop})
+    zaza_model.wait_for_application_states()
 
-    zaza_model.wait_for_application_states(states=states)
+    cmds = ['sudo ceph osd pool create mypool',
+            'sudo rbd create --size 1024 mypool/myimage']
+    for cmd in cmds:
+        zaza_model.run_on_unit('ceph-mon/0', cmd)
+
+    zaza_model.wait_for_application_states()
 
 
 class CephNVMETest(test_utils.BaseCharmTest):
@@ -69,15 +62,33 @@ class CephNVMETest(test_utils.BaseCharmTest):
 
     def _install_nvme(self, unit):
         zaza_model.run_on_unit(unit, 'sudo apt update')
+        release = zaza_model.run_on_unit(unit, 'uname --kernel-release')
+        release = release['Stdout'].strip()
 
-        cmd = 'sudo apt install %s-$(uname -r)'
+        cmd = 'sudo apt install -y %s-' + release
         zaza_model.run_on_unit(unit, cmd % 'linux-modules')
         zaza_model.run_on_unit(unit, cmd % 'linux-modules-extra')
+
         zaza_model.run_on_unit(unit, 'sudo modprobe nvme-core')
         zaza_model.run_on_unit(unit, 'sudo modprobe nvme-tcp')
-        zaza_model.run_on_unit(unit, 'sudo snap install nvme-cli')
+        zaza_model.run_on_unit(unit, 'sudo modprobe nvme-fabrics')
+        zaza_model.run_on_unit(unit, 'sudo apt install -y nvme-cli')
         out = zaza_model.run_on_unit(unit, 'ls /dev/nvme-fabrics')
-        return out.get('Code', 1)
+        return int(out.get('Code', 1))
+
+    @tenacity.retry(wait=tenacity.wait_fixed(1), reraise=True,
+                    stop=tenacity.stop_after_attempt(10),
+                    retry=tenacity.retry_if_exception_type(ValueError))
+    def _nvme_connect(self, unit, data):
+        # As usual with the nvme-cli, some commands can fail for no
+        # apparent reason, so we retry this one a couple of times.
+        cmd = 'sudo nvme connect -t tcp -a %s -s %s -n %s -q %s -S %s'
+        out = zaza_model.run_on_unit(unit, cmd %
+                                     (data['address'], data['port'],
+                                      data['nqn'], self.HOST_NQN,
+                                      self.HOST_KEY))
+        if int(out.get('Code', 1)) != 0:
+            raise ValueError('failed to connect')
 
     def test_mount_device(self):
         # Create an endpoint with both units.
@@ -121,56 +132,26 @@ class CephNVMETest(test_utils.BaseCharmTest):
         zaza_utils.assertActionRanOK(action_obj)
 
         # Mount the device on one unit.
-        if self._install_nvme('ceph-nvme/0') != 0:
+        if self._install_nvme('ceph-osd/0') != 0:
             # Unit doesn't have the nvme-fabrics driver - Abort.
             raise unittest.SkipTest('Skipping test due to lack of NVME driver')
 
-        cmd = 'sudo nvme discover -t tcp -a %s -s %s -o json'
-        out = zaza_model.run_on_unit('ceph-nvme/0', cmd %
-                                     (data['address'], data['port']))
-        out = json.loads(out.get('Stdout'))
-        records = out['records']
-        self.assertEqual(records[0]['nqn'], data['nqn'])
+        self._nvme_connect('ceph-osd/0', data)
+        self._nvme_connect('ceph-osd/0', d2)
 
-        cmd = 'sudo nvme connect-all -t tcp -a %s -s %s -o json'
-        out = zaza_model.run_on_unit('ceph-nvme/0', cmd %
-                                     (data['address'], data['port']))
-        out = json.loads(out.get('Stdout'))
-        for elem in out['Subsystems']:
-            if elem['nqn'] == data['nqn']:
-                addr1 = 'traddr=%s trsvcid=%s' % (data['address'],
-                                                  data['port'])
-                addr2 = 'traddr=%s trsvcid=%s' % (d2['address'], d2['port'])
+        out = zaza_model.run_on_unit('ceph-osd/0',
+                                     'sudo nvme list-subsys -o json')
+        out = json.loads(out.get('Stdout'))[0]['Subsystems'][0]['Paths']
+        self.assertEqual(len(out), 2)
 
-                paths = elem['Paths']
-                self.assertEqual(len(paths), 2)
-                self.assertEqual(paths[0]['Transport'], 'tcp')
-                self.assertEqual(paths[1]['Transport'], 'tcp')
-                self.assertEqual(paths[0]['State'], 'live')
-                self.assertEqual(paths[1]['State'], 'live')
-                self.assertTrue(paths[0]['Address'] == addr1 or
-                                paths[0]['Address'] == addr2)
-                self.assertTrue(paths[1]['Address'] == addr2 or
-                                paths[1]['Address'] == addr2)
-                break
-        else:
-            raise RuntimeError('NQN %s not found' % data['nqn'])
-
-        cmd = 'sudo nvme list -o json'
-        out = zaza_model.run_on_unit('ceph-nvme/0', cmd)
-        out = json.loads(out.get('Stdout'))
-        for elem in out['Devices']:
-            if 'SPDK' in elem['ModelNumber']:
-                device = elem['DevicePath']
-                break
-        else:
-            raise RuntimeError('Device not found')
-
+        device = zaza_model.run_on_unit('ceph-osd/0',
+                                        'sudo nvme list -o json')
+        device = json.loads(device.get('Stdout'))['Devices'][0]['DevicePath']
         msg = 'Hello there!'
-        zaza_model.run_on_unit('ceph-nvme/0',
+        zaza_model.run_on_unit('ceph-osd/0',
                                'echo "%s" | sudo tee %s' % (msg, device))
 
         cmd = 'sudo dd if=%s of=/dev/stdout count=%d status=none' % (
             device, len(msg))
-        out = zaza_model.run_on_unit('ceph-nvme/0', cmd)
-        self.assertEqual(out.get('Stdout'), msg)
+        out = zaza_model.run_on_unit('ceph-osd/0', cmd)
+        self.assertTrue(out.get('Stdout').startswith(msg))

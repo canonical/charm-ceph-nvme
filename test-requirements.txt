@@ -48,3 +48,4 @@ pyopenssl<=22.0.0
 
 pydantic < 2
 cosl
+tenacity
