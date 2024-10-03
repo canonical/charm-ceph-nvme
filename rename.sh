@@ -1,5 +1,5 @@
 #!/bin/bash
-charm=$(grep "name" metadata.yaml | awk '{print $2}')
+charm=$(grep "^name" metadata.yaml | awk '{print $2}')
 echo "renaming ${charm}_*.charm to ${charm}.charm"
 echo -n "pwd: "
 pwd
