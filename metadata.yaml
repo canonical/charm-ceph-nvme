@@ -1,10 +1,14 @@
 name: ceph-nvme
 summary: Gateway for provisioning NVME devices backed by Ceph.
+docs: https://discourse.ubuntu.com/t/announcing-the-ceph-nvme-charm/48512
 maintainer: OpenStack Charmers <openstack-charmers@lists.ubuntu.com>
 description: |
   The NVMe-oF gateway integrates with Ceph storage to provide a highly
   available (HA) target that exports Rados Block Devices (RBD) as
   NVME disks.
+bases:
+  - name: ubuntu
+    channel: 24.04/stable
 tags:
   - openstack
   - storage
